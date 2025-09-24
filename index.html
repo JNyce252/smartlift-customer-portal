@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartLift Customer Portal</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Error Boundary Component
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true };
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <h2 className="text-red-800 font-bold">Something went wrong</h2>
+                            <button 
+                                onClick={() => window.location.reload()}
+                                className="mt-2 text-red-600 underline"
+                            >
+                                Refresh Page
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        // Loading Component
+        const LoadingSpinner = () => (
+            <div className="flex items-center justify-center p-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        );
+
+        // Context for global state
+        const AppContext = React.createContext();
+
+        const { useState, useEffect, useContext } = React;
+
+        // Constants
+        const API_BASE_URL = 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
+// Utility Functions
+const apiCall = async (endpoint, options = {}, customerId) => {
+    try {
+        const url = `${API_BASE_URL}/customer${endpoint}`;
+        const queryParams = endpoint.includes('?') ? '&' : '?';
+        const fullUrl = `${url}${queryParams}customer_id=${customerId}`;
+        
+        const response = await fetch(fullUrl, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        });
+
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('API Call Error:', error);
+        throw error;
+    }
+};
+
+// Custom Hooks
+const useAPI = (endpoint, defaultValue = null) => {
+    const [data, setData] = useState(defaultValue);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [customerId] = useState('golden-plaza-hotel');
+
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const response = await apiCall(endpoint, {}, customerId);
+            setData(response);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { data, loading, error, refetch: fetchData };
+};
+
+// Navigation Menu Component
+const NavigationMenu = ({ currentView, setCurrentView, mobileMenuOpen, setMobileMenuOpen }) => (
+    <nav className={`fixed left-0 top-0 h-full w-64 gradient-bg text-white transform transition-transform duration-300 ease-in-out z-50 
+        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+        <div className="p-6">
+            <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center">
+                    <div className="h-8 w-8 bg-yellow-400 rounded mr-2 flex items-center justify-center text-blue-900 font-bold">⚡</div>
+                    <span className="text-xl font-bold">SmartLift</span>
+                </div>
+                <button 
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="lg:hidden text-white hover:text-yellow-400"
+                >
+                    ✕
+                </button>
+            </div>
+            
+            <ul className="space-y-2">
+                {[
+                    { key: 'dashboard', icon: '🏠', label: 'Dashboard' },
+                    { key: 'elevators', icon: '📊', label: 'Elevator Status' },
+                    { key: 'requests', icon: '🔧', label: 'Service Requests' },
+                    { key: 'newRequest', icon: '💬', label: 'New Request' },
+                    { key: 'maintenance', icon: '📅', label: 'Maintenance' },
+                    { key: 'emergency', icon: '📞', label: 'Emergency', danger: true }
+                ].map(item => (
+                    <li key={item.key}>
+                        <button
+                            onClick={() => setCurrentView(item.key)}
+                            className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
+                                currentView === item.key 
+                                    ? 'bg-white bg-opacity-20 text-yellow-400' 
+                                    : item.danger 
+                                        ? 'text-red-200 hover:bg-red-600 hover:bg-opacity-50' 
+                                        : 'text-white hover:bg-white hover:bg-opacity-10'
+                            }`}
+                        >
+                            <span className="mr-3">{item.icon}</span>
+                            {item.label}
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+        
+        <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white border-opacity-20">
+            <div className="flex items-center">
+                <div className="bg-blue-600 rounded-full p-2 mr-3">
+                    <span className="text-sm">👤</span>
+                </div>
+                <div>
+                    <div className="font-medium">Golden Plaza Hotel</div>
+                    <div className="text-sm text-blue-200">Premium Customer</div>
+                </div>
+            </div>
+        </div>
+    </nav>
+);
+
+// Mobile Menu Button Component
+const MobileMenuButton = ({ setMobileMenuOpen }) => (
+    <button
+        onClick={() => setMobileMenuOpen(true)}
+        className="lg:hidden fixed top-4 left-4 z-40 bg-blue-600 text-white p-2 rounded-lg shadow-lg hover:bg-blue-700 transition-colors"
+    >
+        ☰
+    </button>
+);
+// Dashboard Component
+const DashboardView = ({ systemSummary, notifications, serviceRequests, loading, error, setCurrentView }) => (
+    <div className="space-y-6">
+        {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                <div className="text-red-700">{error}</div>
+                <button 
+                    onClick={() => setError(null)}
+                    className="text-red-600 underline text-sm mt-2"
+                >
+                    Dismiss
+                </button>
+            </div>
+        )}
+        
+        <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">System Overview</h2>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="flex items-center text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                    disabled={loading}
+                >
+                    <span className={`mr-1 ${loading ? 'animate-spin' : ''}`}>🔄</span>
+                    Refresh
+                </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <StatusCard 
+                    title="Operational"
+                    value={systemSummary.operational}
+                    icon="✅"
+                    color="green"
+                />
+                <StatusCard 
+                    title="In Service"
+                    value={systemSummary.maintenance}
+                    icon="🔧"
+                    color="yellow"
+                />
+                <StatusCard 
+                    title="Active Requests"
+                    value={serviceRequests.length}
+                    icon="💬"
+                    color="blue"
+                />
+                <StatusCard 
+                    title="Uptime"
+                    value={`${systemSummary.uptime}%`}
+                    icon="📈"
+                    color="purple"
+                />
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <NotificationsPanel notifications={notifications} />
+            <QuickActionsPanel setCurrentView={setCurrentView} loading={loading} />
+        </div>
+    </div>
+);
+
+// Status Card Component
+const StatusCard = ({ title, value, icon, color }) => (
+    <div className={`bg-gradient-to-r from-${color}-500 to-${color}-600 text-white p-4 rounded-lg`}>
+        <div className="flex items-center justify-between">
+            <div>
+                <div className="text-3xl font-bold">{value || 0}</div>
+                <div className={`text-${color}-100`}>{title}</div>
+            </div>
+            <div className="text-3xl">{icon}</div>
+        </div>
+    </div>
+);
+
+// Notifications Panel Component
+const NotificationsPanel = ({ notifications }) => (
+    <div className="bg-white rounded-lg shadow-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+            <span className="mr-2">🔔</span>
+            Recent Notifications
+        </h3>
+        <div className="space-y-3">
+            {notifications.slice(0, 3).map(notification => (
+                <div 
+                    key={notification.id} 
+                    className={`p-3 rounded-lg border-l-4 ${
+                        notification.type === 'alert' 
+                            ? 'border-red-500 bg-red-50' 
+                            : 'border-blue-500 bg-blue-50'
+                    }`}
+                >
+                    <div className="text-sm font-medium text-gray-800">{notification.message}</div>
+                    <div className="text-xs text-gray-600 mt-1">{notification.time_ago}</div>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
+// Elevator Status Component
+const ElevatorStatusView = ({ elevatorStatus, loading }) => (
+    <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Elevator Status Monitor</h2>
+            {loading ? (
+                <LoadingSpinner />
+            ) : (
+                <div className="grid gap-6">
+                    {elevatorStatus.map(elevator => (
+                        <ElevatorCard key={elevator.id} elevator={elevator} />
+                    ))}
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+// Elevator Card Component
+const ElevatorCard = ({ elevator }) => (
+    <div className="border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">
+                Elevator {elevator.id} - {elevator.location}
+            </h3>
+            <StatusBadge status={elevator.status} />
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <StatusDetail label="Current Floor" value={elevator.current_floor} />
+            <StatusDetail label="Capacity" value={elevator.capacity_percentage} />
+            <StatusDetail label="Last Service" value={elevator.last_service_date} />
+            <div className="flex items-center justify-end">
+                <div className="text-4xl">
+                    {elevator.status === 'operational' ? '✅' : '🔧'}
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// Status Badge Component
+const StatusBadge = ({ status }) => (
+    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+        status === 'operational' 
+            ? 'bg-green-100 text-green-800' 
+            : 'bg-yellow-100 text-yellow-800'
+    }`}>
+        {status === 'operational' ? 'Operational' : 'Maintenance'}
+    </span>
+);
+
+// Status Detail Component
+const StatusDetail = ({ label, value }) => (
+    <div>
+        <label className="text-sm font-medium text-gray-600">{label}</label>
+        <div className="text-gray-800">{value}</div>
+    </div>
+);
+// Service Requests View Component
+const ServiceRequestsView = ({ serviceRequests, loading, setCurrentView }) => (
+    <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">Service Requests</h2>
+                <button 
+                    onClick={() => setCurrentView('newRequest')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+                >
+                    <span className="mr-2">💬</span>
+                    New Request
+                </button>
+            </div>
+            
+            {loading ? (
+                <LoadingSpinner />
+            ) : (
+                <div className="space-y-4">
+                    {serviceRequests.map(request => (
+                        <ServiceRequestCard key={request.id} request={request} />
+                    ))}
+                    {serviceRequests.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                            No service requests found. Click "New Request" to submit one.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+// Service Request Card Component
+const ServiceRequestCard = ({ request }) => (
+    <div className="border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">#{request.id} - {request.elevator}</h3>
+            <div className="flex items-center space-x-3">
+                <PriorityBadge priority={request.priority} />
+                <StatusBadge status={request.status} />
+            </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <RequestDetail label="Issue" value={request.issue} />
+            <RequestDetail label="Technician" value={request.technician} />
+            <RequestDetail label="Est. Completion" value={request.estimated_completion} />
+        </div>
+        
+        <div className="mt-4 flex space-x-3">
+            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                View Details
+            </button>
+            <button className="text-green-600 hover:text-green-800 text-sm font-medium">
+                Message Technician
+            </button>
+        </div>
+    </div>
+);
+
+// Priority Badge Component
+const PriorityBadge = ({ priority }) => (
+    <span className={`px-2 py-1 rounded text-xs font-medium ${
+        priority === 'High' ? 'bg-red-100 text-red-800' :
+        priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+        'bg-green-100 text-green-800'
+    }`}>
+        {priority} Priority
+    </span>
+);
+
+// Request Detail Component
+const RequestDetail = ({ label, value }) => (
+    <div>
+        <label className="font-medium text-gray-600">{label}:</label>
+        <div className="text-gray-800">{value}</div>
+    </div>
+);
+
+// New Request View Component
+const NewRequestView = ({ newRequest, setNewRequest, submitServiceRequest, loading, error, setCurrentView }) => (
+    <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Submit Service Request</h2>
+            
+            <div className="space-y-6">
+                <SelectField
+                    label="Select Elevator *"
+                    value={newRequest.elevator_id}
+                    onChange={(e) => setNewRequest({...newRequest, elevator_id: e.target.value})}
+                    options={[
+                        { value: "", label: "Choose elevator..." },
+                        { value: "A", label: "Elevator A - Main Lobby" },
+                        { value: "B", label: "Elevator B - North Tower" },
+                        { value: "C", label: "Elevator C - Parking Garage" }
+                    ]}
+                    required
+                />
+                
+                <SelectField
+                    label="Priority Level"
+                    value={newRequest.priority}
+                    onChange={(e) => setNewRequest({...newRequest, priority: e.target.value})}
+                    options={[
+                        { value: "Low", label: "Low Priority" },
+                        { value: "Medium", label: "Medium Priority" },
+                        { value: "High", label: "High Priority" }
+                    ]}
+                />
+                
+                <TextAreaField
+                    label="Issue Description *"
+                    value={newRequest.description}
+                    onChange={(e) => setNewRequest({...newRequest, description: e.target.value})}
+                    placeholder="Please describe the issue in detail..."
+                    required
+                />
+                
+                <RadioGroup
+                    label="Preferred Contact Method"
+                    value={newRequest.contact_preference}
+                    onChange={(e) => setNewRequest({...newRequest, contact_preference: e.target.value})}
+                    options={[
+                        { value: "email", label: "Email" },
+                        { value: "phone", label: "Phone" }
+                    ]}
+                />
+                
+                <div className="flex space-x-4">
+                    <Button
+                        onClick={submitServiceRequest}
+                        disabled={loading}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
+                    >
+                        {loading ? 'Submitting...' : 'Submit Request'}
+                    </Button>
+                    <Button
+                        onClick={() => setCurrentView('requests')}
+                        className="flex-1 bg-gray-600 hover:bg-gray-700"
+                    >
+                        Cancel
+                    </Button>
+                </div>
+                
+                {error && <ErrorMessage message={error} />}
+            </div>
+        </div>
+    </div>
+);
+
+// Maintenance View Component
+const MaintenanceView = ({ maintenanceSchedule, loading }) => (
+    <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Maintenance Schedule</h2>
+            {loading ? (
+                <LoadingSpinner />
+            ) : (
+                <div className="space-y-4">
+                    {maintenanceSchedule.map(item => (
+                        <MaintenanceCard key={item.id} item={item} />
+                    ))}
+                    {maintenanceSchedule.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                            No scheduled maintenance found.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+// Maintenance Card Component
+const MaintenanceCard = ({ item }) => (
+    <div className="border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">
+                Elevator {item.elevator_id} - {item.elevator_location}
+            </h3>
+            <StatusBadge status={item.status} />
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+            <MaintenanceDetail label="Maintenance Type" value={item.maintenance_type} />
+            <MaintenanceDetail label="Scheduled Date" value={item.scheduled_date} />
+            <MaintenanceDetail label="Time" value={item.scheduled_time} />
+            <MaintenanceDetail label="Technician" value={item.technician} />
+        </div>
+    </div>
+);
+
+// Maintenance Detail Component
+const MaintenanceDetail = ({ label, value }) => (
+    <div>
+        <label className="font-medium text-gray-600">{label}:</label>
+        <div className="text-gray-800">{value}</div>
+    </div>
+);
+
+// Emergency View Component
+const EmergencyView = ({ handleEmergencyContact, loading }) => (
+    <div className="space-y-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <h2 className="text-2xl font-bold text-red-800 mb-4 flex items-center">
+                <span className="mr-2">🚨</span>
+                Emergency Contact
+            </h2>
+            <p className="text-red-700 mb-6">
+                Use this section only for genuine emergencies. For routine service requests, please use the standard service request form.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <EmergencyButton
+                    onClick={() => handleEmergencyContact('elevator_stuck')}
+                    disabled={loading}
+                    title="Person Stuck in Elevator"
+                    description="Immediate rescue response needed"
+                    icon="🚪"
+                />
+                <EmergencyButton
+                    onClick={() => handleEmergencyContact('safety_hazard')}
+                    disabled={loading}
+                    title="Safety Hazard"
+                    description="Dangerous equipment condition"
+                    icon="⚠️"
+                />
+                <EmergencyButton
+                    onClick={() => handleEmergencyContact('fire_emergency')}
+                    disabled={loading}
+                    title="Fire Emergency"
+                    description="Fire or smoke in elevator shaft"
+                    icon="🔥"
+                />
+                <EmergencyButton
+                    onClick={() => handleEmergencyContact('general_emergency')}
+                    disabled={loading}
+                    title="Other Emergency"
+                    description="Other urgent situations"
+                    icon="📞"
+                />
+            </div>
+            
+            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h3 className="font-bold text-yellow-800 mb-2">24/7 Emergency Hotline:</h3>
+                <p className="text-yellow-700 text-lg font-mono">1-800-LIFT-911</p>
+            </div>
+        </div>
+    </div>
+);
+
+// Emergency Button Component
+const EmergencyButton = ({ onClick, disabled, title, description, icon }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white p-6 rounded-lg text-left transition-colors w-full"
+    >
+        <div className="text-xl font-bold mb-2">{icon} {title}</div>
+        <div className="text-red-100">{description}</div>
+    </button>
+);
+// Main App Component
+const SmartLiftApp = () => {
+    // State Management
+    const [currentView, setCurrentView] = useState('dashboard');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [customerId] = useState('golden-plaza-hotel');
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    
+    // Data State
+    const [notifications, setNotifications] = useState([]);
+    const [serviceRequests, setServiceRequests] = useState([]);
+    const [elevatorStatus, setElevatorStatus] = useState([]);
+    const [maintenanceSchedule, setMaintenanceSchedule] = useState([]);
+    const [systemSummary, setSystemSummary] = useState({
+        operational: 0,
+        maintenance: 0,
+        activeRequests: 0,
+        uptime: 0
+    });
+
+    // Form State
+    const [newRequest, setNewRequest] = useState({
+        elevator_id: '',
+        priority: 'Medium',
+        description: '',
+        contact_preference: 'email'
+    });
+
+    // Data Fetching Functions
+    const loadElevatorStatus = async () => {
+        try {
+            setLoading(true);
+            const data = await apiCall('/elevators/status', {}, customerId);
+            setElevatorStatus(data.elevators || []);
+            setSystemSummary(data.summary || {});
+            setError(null);
+        } catch (error) {
+            console.error('Failed to load elevator status:', error);
+            // Fallback data for demo purposes
+            setElevatorStatus([
+                { id: 'A', location: 'Main Lobby', status: 'operational', current_floor: 5, capacity_percentage: '80%', last_service_date: '2024-09-15' },
+                { id: 'B', location: 'North Tower', status: 'maintenance', current_floor: 1, capacity_percentage: '0%', last_service_date: '2024-09-10' },
+                { id: 'C', location: 'Parking Garage', status: 'operational', current_floor: 3, capacity_percentage: '45%', last_service_date: '2024-09-12' }
+            ]);
+            setSystemSummary({ operational: 2, maintenance: 1, activeRequests: 1, uptime: 66.7 });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadServiceRequests = async () => {
+        try {
+            setLoading(true);
+            const data = await apiCall('/service-requests', {}, customerId);
+            setServiceRequests(data.service_requests || []);
+            setError(null);
+        } catch (error) {
+            console.error('Failed to load service requests:', error);
+            setServiceRequests([/* fallback data */]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadNotifications = async () => {
+        try {
+            const data = await apiCall('/notifications', {}, customerId);
+            setNotifications(data.notifications || []);
+        } catch (error) {
+            console.error('Failed to load notifications:', error);
+            setNotifications([/* fallback data */]);
+        }
+    };
+
+    const loadMaintenanceSchedule = async () => {
+        try {
+            setLoading(true);
+            const data = await apiCall('/maintenance/schedule', {}, customerId);
+            setMaintenanceSchedule(data.maintenance_schedule || []);
+            setError(null);
+        } catch (error) {
+            console.error('Failed to load maintenance schedule:', error);
+            setMaintenanceSchedule([/* fallback data */]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Form Submission Handlers
+    const submitServiceRequest = async () => {
+        try {
+            if (!newRequest.elevator_id || !newRequest.description) {
+                setError('Please fill in all required fields');
+                return;
+            }
+
+            setLoading(true);
+            const response = await apiCall('/service-requests', {
+                method: 'POST',
+                body: JSON.stringify({
+                    customer_id: customerId,
+                    ...newRequest
+                })
+            }, customerId);
+
+            setNewRequest({
+                elevator_id: '',
+                priority: 'Medium',
+                description: '',
+                contact_preference: 'email'
+            });
+            
+            setCurrentView('requests');
+            await loadServiceRequests();
+            
+            alert(`Service request submitted successfully! Request ID: ${response.request_id}`);
+            setError(null);
+        } catch (error) {
+            setError('Failed to submit service request. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEmergencyContact = async (contactType) => {
+        try {
+            setLoading(true);
+            const response = await apiCall('/emergency/contact', {
+                method: 'POST',
+                body: JSON.stringify({
+                    customer_id: customerId,
+                    contact_type: contactType,
+                    timestamp: new Date().toISOString()
+                })
+            }, customerId);
+
+            alert(`Emergency contact sent! Ticket ID: ${response.emergency_id}\n${response.message}`);
+            setError(null);
+        } catch (error) {
+            setError('Failed to send emergency contact. Please call the emergency hotline.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Effect Hooks
+    useEffect(() => {
+        loadElevatorStatus();
+        loadServiceRequests();
+        loadNotifications();
+        loadMaintenanceSchedule();
+
+        const interval = setInterval(() => {
+            loadElevatorStatus();
+            loadNotifications();
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        switch (currentView) {
+            case 'elevators':
+                loadElevatorStatus();
+                break;
+            case 'requests':
+                loadServiceRequests();
+                break;
+            case 'maintenance':
+                loadMaintenanceSchedule();
+                break;
+            default:
+                break;
+        }
+    }, [currentView]);
+
+    // View Router
+    const renderCurrentView = () => {
+        switch (currentView) {
+            case 'dashboard':
+                return (
+                    <DashboardView 
+                        systemSummary={systemSummary}
+                        notifications={notifications}
+                        serviceRequests={serviceRequests}
+                        loading={loading}
+                        error={error}
+                        setCurrentView={setCurrentView}
+                    />
+                );
+            case 'elevators':
+                return (
+                    <ElevatorStatusView 
+                        elevatorStatus={elevatorStatus}
+                        loading={loading}
+                    />
+                );
+            case 'requests':
+                return (
+                    <ServiceRequestsView 
+                        serviceRequests={serviceRequests}
+                        loading={loading}
+                        setCurrentView={setCurrentView}
+                    />
+                );
+            case 'newRequest':
+                return (
+                    <NewRequestView 
+                        newRequest={newRequest}
+                        setNewRequest={setNewRequest}
+                        submitServiceRequest={submitServiceRequest}
+                        loading={loading}
+                        error={error}
+                        setCurrentView={setCurrentView}
+                    />
+                );
+            case 'maintenance':
+                return (
+                    <MaintenanceView 
+                        maintenanceSchedule={maintenanceSchedule}
+                        loading={loading}
+                    />
+                );
+            case 'emergency':
+                return (
+                    <EmergencyView 
+                        handleEmergencyContact={handleEmergencyContact}
+                        loading={loading}
+                    />
+                );
+            default:
+                return <DashboardView />;
+        }
+    };
+
+    // Main Render
+    return (
+        <ErrorBoundary>
+            <div className="min-h-screen bg-gray-50">
+                <NavigationMenu 
+                    currentView={currentView}
+                    setCurrentView={setCurrentView}
+                    mobileMenuOpen={mobileMenuOpen}
+                    setMobileMenuOpen={setMobileMenuOpen}
+                />
+                <MobileMenuButton setMobileMenuOpen={setMobileMenuOpen} />
+                
+                <div className="lg:ml-64 min-h-screen">
+                    <div className="p-6">
+                        {renderCurrentView()}
+                    </div>
+                </div>
+                
+                {mobileMenuOpen && (
+                    <div 
+                        className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+                        onClick={() => setMobileMenuOpen(false)}
+                    />
+                )}
+            </div>
+        </ErrorBoundary>
+    );
+};
+
+// Final Render
+ReactDOM.render(
+    <React.StrictMode>
+        <SmartLiftApp />
+    </React.StrictMode>,
+    document.getElementById('root')
+);
