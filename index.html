@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: 'unsafe-inline' 'unsafe-eval';">
-    <title>SmartLift Customer Portal</title>
+    <title>SmartLift Intelligence Platform</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .animate-spin {
             animation: spin 1s linear infinite;
@@ -18,7 +18,7 @@
             to { transform: rotate(360deg); }
         }
         .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
         }
     </style>
 </head>
@@ -26,60 +26,31 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Error Boundary Component
-        class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false };
-            }
-
-            static getDerivedStateFromError(error) {
-                return { hasError: true };
-            }
-
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <h2 className="text-red-800 font-bold">Something went wrong</h2>
-                            <button 
-                                onClick={() => window.location.reload()}
-                                className="mt-2 text-red-600 underline"
-                            >
-                                Refresh Page
-                            </button>
-                        </div>
-                    );
-                }
-                return this.props.children;
-            }
-        }
-
-        // Loading Component
-        const LoadingSpinner = () => (
-            <div className="flex items-center justify-center p-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            </div>
-        );
-
-        // Context for global state
-        const AppContext = React.createContext();
-
-        const { useState, useEffect, useContext } = React;
-
-        // Constants
-        const API_BASE_URL = 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
-
+        // Constants and Configurations
+        const API_BASE_URL = 'https://your-api-gateway-url.amazonaws.com/prod';
+        
         // Utility Functions
-        const apiCall = async (endpoint, options = {}, customerId) => {
-            try {
-                const url = `${API_BASE_URL}/customer${endpoint}`;
-                const queryParams = endpoint.includes('?') ? '&' : '?';
-                const fullUrl = `${url}${queryParams}customer_id=${customerId}`;
-                
-                console.log('Making API call to:', fullUrl); // Add logging
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        };
 
-                const response = await fetch(fullUrl, {
+        const calculateScore = (hotel) => {
+            // Implement scoring logic
+            let score = 0;
+            if (hotel.elevator_mentions > 0) score += 30;
+            if (hotel.avg_sentiment < 0.5) score += 20;
+            if (hotel.year_built < 2000) score += 25;
+            if (!hotel.last_renovation_date) score += 25;
+            return score;
+        };
+
+        // API Functions
+        const apiCall = async (endpoint, options = {}) => {
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                     headers: {
                         'Content-Type': 'application/json',
                         ...options.headers
@@ -88,9 +59,7 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.text();
-                    console.error('API Error:', errorData);
-                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    throw new Error(`API Error: ${response.status}`);
                 }
 
                 return await response.json();
@@ -100,420 +69,119 @@
             }
         };
 
-        // Custom Hooks
-        const useAPI = (endpoint, defaultValue = null) => {
-            const [data, setData] = useState(defaultValue);
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState(null);
-            const [customerId] = useState('golden-plaza-hotel');
-
-            const fetchData = async () => {
-                try {
-                    setLoading(true);
-                    setError(null);
-                    const response = await apiCall(endpoint, {}, customerId);
-                    setData(response);
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return { data, loading, error, refetch: fetchData };
-        };
-
-        // Navigation Menu Component
-        const NavigationMenu = ({ currentView, setCurrentView, mobileMenuOpen, setMobileMenuOpen }) => (
-            <nav className={`fixed left-0 top-0 h-full w-64 gradient-bg text-white transform transition-transform duration-300 ease-in-out z-50 
-                ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-                <div className="p-6">
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center">
-                            <div className="h-8 w-8 bg-yellow-400 rounded mr-2 flex items-center justify-center text-blue-900 font-bold">⚡</div>
-                            <span className="text-xl font-bold">SmartLift</span>
+        // Components
+        const OpportunityCard = ({ hotel }) => {
+            const score = calculateScore(hotel);
+            
+            return (
+                <div className="bg-white rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h3 className="text-xl font-bold text-gray-900">{hotel.name}</h3>
+                            <p className="text-gray-600">{hotel.address}</p>
                         </div>
-                        <button 
-                            onClick={() => setMobileMenuOpen(false)}
-                            className="lg:hidden text-white hover:text-yellow-400"
-                        >
-                            ✕
-                        </button>
+                        <div className="text-right">
+                            <div className="text-2xl font-bold text-blue-600">{score}/100</div>
+                            <div className="text-sm text-gray-500">Opportunity Score</div>
+                        </div>
                     </div>
-                    
-                    <ul className="space-y-2">
-                        {[
-                            { key: 'dashboard', icon: '🏠', label: 'Dashboard' },
-                            { key: 'elevators', icon: '📊', label: 'Elevator Status' },
-                            { key: 'requests', icon: '🔧', label: 'Service Requests' },
-                            { key: 'newRequest', icon: '💬', label: 'New Request' },
-                            { key: 'maintenance', icon: '📅', label: 'Maintenance' },
-                            { key: 'emergency', icon: '📞', label: 'Emergency', danger: true }
-                        ].map(item => (
-                            <li key={item.key}>
-                                <button
-                                    onClick={() => setCurrentView(item.key)}
-                                    className={`w-full flex items-center px-4 py-3 rounded-lg transition-colors ${
-                                        currentView === item.key 
-                                            ? 'bg-white bg-opacity-20 text-yellow-400' 
-                                            : item.danger 
-                                                ? 'text-red-200 hover:bg-red-600 hover:bg-opacity-50' 
-                                                : 'text-white hover:bg-white hover:bg-opacity-10'
-                                    }`}
-                                >
-                                    <span className="mr-3">{item.icon}</span>
-                                    {item.label}
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-                
-                <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white border-opacity-20">
-                    <div className="flex items-center">
-                        <div className="bg-blue-600 rounded-full p-2 mr-3">
-                            <span className="text-sm">👤</span>
+
+                    <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                            <div className="text-sm text-gray-500">Elevators</div>
+                            <div className="font-semibold">{hotel.elevator_count}</div>
                         </div>
                         <div>
-                            <div className="font-medium">Golden Plaza Hotel</div>
-                            <div className="text-sm text-blue-200">Premium Customer</div>
+                            <div className="text-sm text-gray-500">Year Built</div>
+                            <div className="font-semibold">{hotel.year_built || 'Unknown'}</div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-500">Last Renovation</div>
+                            <div className="font-semibold">
+                                {hotel.last_renovation_date || 'No Data'}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-500">Review Mentions</div>
+                            <div className="font-semibold">{hotel.elevator_mentions || 0}</div>
                         </div>
                     </div>
-                </div>
-            </nav>
-        );
 
-        // Mobile Menu Button Component
-        const MobileMenuButton = ({ setMobileMenuOpen }) => (
-            <button
-                onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden fixed top-4 left-4 z-40 bg-blue-600 text-white p-2 rounded-lg shadow-lg hover:bg-blue-700 transition-colors"
-            >
-                ☰
-            </button>
-        );
+                    <div className="mt-4">
+                        <h4 className="text-sm font-semibold text-gray-900">Recent Reviews</h4>
+                        {hotel.recent_reviews ? (
+                            <div className="mt-2 text-sm text-gray-600">
+                                {hotel.recent_reviews.map((review, index) => (
+                                    <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
+                                        "{review.text.substring(0, 100)}..."
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-gray-500">No recent reviews</div>
+                        )}
+                    </div>
 
-        // Dashboard Component
-        const DashboardView = ({ systemSummary, notifications, serviceRequests, loading, error, setCurrentView }) => (
-            <div className="space-y-6">
-                {error && (
-                    <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-                        <div className="text-red-700">{error}</div>
-                        <button 
-                            onClick={() => setError(null)}
-                            className="text-red-600 underline text-sm mt-2"
-                        >
-                            Dismiss
+                    <div className="mt-4 flex justify-end space-x-3">
+                        <button className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800">
+                            View Details
+                        </button>
+                        <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+                            Start Outreach
                         </button>
                     </div>
-                )}
-                
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-2xl font-bold text-gray-800">System Overview</h2>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="flex items-center text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                            disabled={loading}
-                        >
-                            <span className={`mr-1 ${loading ? 'animate-spin' : ''}`}>🔄</span>
-                            Refresh
-                        </button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <StatusCard 
-                            title="Operational"
-                            value={systemSummary.operational}
-                            icon="✅"
-                            color="green"
-                        />
-                        <StatusCard 
-                            title="In Service"
-                            value={systemSummary.maintenance}
-                            icon="🔧"
-                            color="yellow"
-                        />
-                        <StatusCard 
-                            title="Active Requests"
-                            value={serviceRequests.length}
-                            icon="💬"
-                            color="blue"
-                        />
-                        <StatusCard 
-                            title="Uptime"
-                            value={`${systemSummary.uptime}%`}
-                            icon="📈"
-                            color="purple"
-                        />
-                    </div>
                 </div>
+            );
+        };
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <NotificationsPanel notifications={notifications} />
-                    <QuickActionsPanel setCurrentView={setCurrentView} loading={loading} />
-                </div>
-            </div>
-        );
-
-        // Status Card Component
-        const StatusCard = ({ title, value, icon, color }) => (
-            <div className={`bg-gradient-to-r from-${color}-500 to-${color}-600 text-white p-4 rounded-lg`}>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-3xl font-bold">{value || 0}</div>
-                        <div className={`text-${color}-100`}>{title}</div>
-                    </div>
-                    <div className="text-3xl">{icon}</div>
-                </div>
-            </div>
-        );
-
-        // Notifications Panel Component
-        const NotificationsPanel = ({ notifications }) => (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                    <span className="mr-2">🔔</span>
-                    Recent Notifications
-                </h3>
-                <div className="space-y-3">
-                    {notifications.slice(0, 3).map(notification => (
-                        <div 
-                            key={notification.id} 
-                            className={`p-3 rounded-lg border-l-4 ${
-                                notification.type === 'alert' 
-                                    ? 'border-red-500 bg-red-50' 
-                                    : 'border-blue-500 bg-blue-50'
-                            }`}
-                        >
-                            <div className="text-sm font-medium text-gray-800">{notification.message}</div>
-                            <div className="text-xs text-gray-600 mt-1">{notification.time_ago}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-
-        // Quick Actions Panel Component
-        const QuickActionsPanel = ({ setCurrentView, loading }) => (
-            <div className="bg-white rounded-lg shadow-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <button
-                        onClick={() => setCurrentView('newRequest')}
-                        disabled={loading}
-                        className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-lg flex flex-col items-center justify-center transition-colors"
-                    >
-                        <span className="text-2xl mb-2">💬</span>
-                        New Service Request
-                    </button>
-                    <button
-                        onClick={() => setCurrentView('elevators')}
-                        disabled={loading}
-                        className="bg-green-600 hover:bg-green-700 text-white p-4 rounded-lg flex flex-col items-center justify-center transition-colors"
-                    >
-                        <span className="text-2xl mb-2">📊</span>
-                        View Elevator Status
-                    </button>
-                </div>
-            </div>
-        );
-
-        // Elevator Status Component
-        const ElevatorStatusView = ({ elevatorStatus, loading }) => (
-            <div className="space-y-6">
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Elevator Status Monitor</h2>
-                    {loading ? (
-                        <LoadingSpinner />
-                    ) : (
-                        <div className="grid gap-6">
-                            {elevatorStatus.map(elevator => (
-                                <ElevatorCard key={elevator.id} elevator={elevator} />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-
-        // Elevator Card Component
-        const ElevatorCard = ({ elevator }) => (
-            <div className="border border-gray-200 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-800">
-                        Elevator {elevator.id} - {elevator.location}
-                    </h3>
-                    <StatusBadge status={elevator.status} />
-                </div>
-                
+        const FilterSection = ({ filters, setFilters }) => (
+            <div className="bg-white p-4 rounded-lg shadow mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <StatusDetail label="Current Floor" value={elevator.current_floor} />
-                    <StatusDetail label="Capacity" value={elevator.capacity_percentage} />
-                    <StatusDetail label="Last Service" value={elevator.last_service_date} />
-                    <div className="flex items-center justify-end">
-                        <div className="text-4xl">
-                            {elevator.status === 'operational' ? '✅' : '🔧'}
-                        </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">City</label>
+                        <input
+                            type="text"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={filters.city}
+                            onChange={(e) => setFilters({...filters, city: e.target.value})}
+                            placeholder="Enter city..."
+                        />
                     </div>
-                </div>
-            </div>
-        );
-
-         // Status Badge Component
-        const StatusBadge = ({ status }) => (
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                status === 'operational' 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-yellow-100 text-yellow-800'
-            }`}>
-                {status === 'operational' ? 'Operational' : 'Maintenance'}
-            </span>
-        );
-
-        // Status Detail Component
-        const StatusDetail = ({ label, value }) => (
-            <div>
-                <label className="text-sm font-medium text-gray-600">{label}</label>
-                <div className="text-gray-800">{value}</div>
-            </div>
-        );
-
-        // Form Components
-        const SelectField = ({ label, value, onChange, options, required }) => (
-            <div>
-                <label className="block text-gray-700 font-medium mb-2">{label}</label>
-                <select 
-                    value={value} 
-                    onChange={onChange}
-                    required={required}
-                    className="w-full border border-gray-300 rounded-lg p-2"
-                >
-                    {options.map(option => (
-                        <option key={option.value} value={option.value}>
-                            {option.label}
-                        </option>
-                    ))}
-                </select>
-            </div>
-        );
-
-        const TextAreaField = ({ label, value, onChange, placeholder, required }) => (
-            <div>
-                <label className="block text-gray-700 font-medium mb-2">{label}</label>
-                <textarea
-                    value={value}
-                    onChange={onChange}
-                    placeholder={placeholder}
-                    required={required}
-                    className="w-full border border-gray-300 rounded-lg p-2"
-                    rows="4"
-                />
-            </div>
-        );
-
-        const RadioGroup = ({ label, value, onChange, options }) => (
-            <div>
-                <label className="block text-gray-700 font-medium mb-2">{label}</label>
-                <div className="space-y-2">
-                    {options.map(option => (
-                        <label key={option.value} className="flex items-center">
-                            <input
-                                type="radio"
-                                value={option.value}
-                                checked={value === option.value}
-                                onChange={onChange}
-                                className="mr-2"
-                            />
-                            {option.label}
-                        </label>
-                    ))}
-                </div>
-            </div>
-        );
-
-        const Button = ({ children, onClick, disabled, className }) => (
-            <button
-                onClick={onClick}
-                disabled={disabled}
-                className={`px-4 py-2 rounded-lg text-white transition-colors ${className}`}
-            >
-                {children}
-            </button>
-        );
-
-        const ErrorMessage = ({ message }) => (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 mt-4">
-                <p className="text-red-700">{message}</p>
-            </div>
-        );
-
-        // New Request View Component
-        const NewRequestView = ({ newRequest, setNewRequest, submitServiceRequest, loading, error, setCurrentView }) => (
-            <div className="space-y-6">
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Submit Service Request</h2>
-                    
-                    <div className="space-y-6">
-                        <SelectField
-                            label="Select Elevator *"
-                            value={newRequest.elevator_id}
-                            onChange={(e) => setNewRequest({...newRequest, elevator_id: e.target.value})}
-                            options={[
-                                { value: "", label: "Choose elevator..." },
-                                { value: "A", label: "Elevator A - Main Lobby" },
-                                { value: "B", label: "Elevator B - North Tower" },
-                                { value: "C", label: "Elevator C - Parking Garage" }
-                            ]}
-                            required
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Min Elevators</label>
+                        <input
+                            type="number"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={filters.minElevators}
+                            onChange={(e) => setFilters({...filters, minElevators: e.target.value})}
+                            min="0"
                         />
-                        
-                        <SelectField
-                            label="Priority Level"
-                            value={newRequest.priority}
-                            onChange={(e) => setNewRequest({...newRequest, priority: e.target.value})}
-                            options={[
-                                { value: "Low", label: "Low Priority" },
-                                { value: "Medium", label: "Medium Priority" },
-                                { value: "High", label: "High Priority" }
-                            ]}
-                        />
-                        
-                        <TextAreaField
-                            label="Issue Description *"
-                            value={newRequest.description}
-                            onChange={(e) => setNewRequest({...newRequest, description: e.target.value})}
-                            placeholder="Please describe the issue in detail..."
-                            required
-                        />
-                        
-                        <RadioGroup
-                            label="Preferred Contact Method"
-                            value={newRequest.contact_preference}
-                            onChange={(e) => setNewRequest({...newRequest, contact_preference: e.target.value})}
-                            options={[
-                                { value: "email", label: "Email" },
-                                { value: "phone", label: "Phone" }
-                            ]}
-                        />
-                        
-                        <div className="flex space-x-4">
-                            <Button
-                                onClick={submitServiceRequest}
-                                disabled={loading}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
-                            >
-                                {loading ? 'Submitting...' : 'Submit Request'}
-                            </Button>
-                            <Button
-                                onClick={() => setCurrentView('requests')}
-                                className="flex-1 bg-gray-600 hover:bg-gray-700"
-                            >
-                                Cancel
-                            </Button>
-                        </div>
-                        
-                        {error && <ErrorMessage message={error} />}
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Property Type</label>
+                        <select
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={filters.propertyType}
+                            onChange={(e) => setFilters({...filters, propertyType: e.target.value})}
+                        >
+                            <option value="">All Types</option>
+                            <option value="hotel">Hotels</option>
+                            <option value="motel">Motels</option>
+                            <option value="resort">Resorts</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Priority Level</label>
+                        <select
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={filters.priorityLevel}
+                            onChange={(e) => setFilters({...filters, priorityLevel: e.target.value})}
+                        >
+                            <option value="">All Priorities</option>
+                            <option value="high">High Priority</option>
+                            <option value="medium">Medium Priority</option>
+                            <option value="low">Low Priority</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -521,120 +189,85 @@
 
         // Main App Component
         const SmartLiftApp = () => {
-            const [currentView, setCurrentView] = useState('dashboard');
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState(null);
-            const [customerId] = useState('golden-plaza-hotel');
-            const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-            const [isInitializing, setIsInitializing] = useState(true);
-            
-            const [notifications, setNotifications] = useState([]);
-            const [serviceRequests, setServiceRequests] = useState([]);
-            const [elevatorStatus, setElevatorStatus] = useState([]);
-            const [maintenanceSchedule, setMaintenanceSchedule] = useState([]);
-            const [systemSummary, setSystemSummary] = useState({
-                operational: 0,
-                maintenance: 0,
-                activeRequests: 0,
-                uptime: 0
+            const [hotels, setHotels] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [filters, setFilters] = useState({
+                city: '',
+                minElevators: '',
+                propertyType: '',
+                priorityLevel: ''
             });
 
-            const [newRequest, setNewRequest] = useState({
-                elevator_id: '',
-                priority: 'Medium',
-                description: '',
-                contact_preference: 'email'
-            });
+            useEffect(() => {
+                loadHotels();
+            }, [filters]);
 
-            // Data Fetching Functions
-            const loadElevatorStatus = async () => {
+            const loadHotels = async () => {
                 try {
                     setLoading(true);
-                    const data = await apiCall('/elevators/status', {}, customerId);
-                    setElevatorStatus(data.elevators || []);
-                    setSystemSummary(data.summary || {});
-                    setError(null);
+                    const response = await apiCall('/hotels', {
+                        method: 'GET',
+                        params: filters
+                    });
+                    setHotels(response.hotels || []);
                 } catch (error) {
-                    console.error('Failed to load elevator status:', error);
-                    setElevatorStatus([
-                        { id: 'A', location: 'Main Lobby', status: 'operational', current_floor: 5, capacity_percentage: '80%', last_service_date: '2024-09-15' },
-                        { id: 'B', location: 'North Tower', status: 'maintenance', current_floor: 1, capacity_percentage: '0%', last_service_date: '2024-09-10' },
-                        { id: 'C', location: 'Parking Garage', status: 'operational', current_floor: 3, capacity_percentage: '45%', last_service_date: '2024-09-12' }
+                    console.error('Failed to load hotels:', error);
+                    // Load sample data for development
+                    setHotels([
+                        {
+                            id: 1,
+                            name: 'Sample Hotel',
+                            address: '123 Main St, Austin, TX',
+                            elevator_count: 4,
+                            year_built: 1995,
+                            elevator_mentions: 3,
+                            recent_reviews: [
+                                { text: 'Elevators need updating...' }
+                            ]
+                        }
                     ]);
-                    setSystemSummary({ operational: 2, maintenance: 1, activeRequests: 1, uptime: 66.7 });
                 } finally {
                     setLoading(false);
                 }
             };
 
-            useEffect(() => {
-                Promise.all([
-                    loadElevatorStatus(),
-                    // Add other initial data loading here
-                ]).finally(() => {
-                    setIsInitializing(false);
-                });
-            }, []);
-
-            if (isInitializing) {
-                return <LoadingSpinner />;
-            }
-
-            // Render Main App
             return (
-                <ErrorBoundary>
-                    <div className="min-h-screen bg-gray-50">
-                        <NavigationMenu 
-                            currentView={currentView}
-                            setCurrentView={setCurrentView}
-                            mobileMenuOpen={mobileMenuOpen}
-                            setMobileMenuOpen={setMobileMenuOpen}
-                        />
-                        <MobileMenuButton setMobileMenuOpen={setMobileMenuOpen} />
-                        
-                        <div className="lg:ml-64 min-h-screen">
-                            <div className="p-6">
-                                {currentView === 'dashboard' && (
-                                    <DashboardView 
-                                        systemSummary={systemSummary}
-                                        notifications={notifications}
-                                        serviceRequests={serviceRequests}
-                                        loading={loading}
-                                        error={error}
-                                        setCurrentView={setCurrentView}
-                                    />
-                                )}
-                                {currentView === 'elevators' && (
-                                    <ElevatorStatusView 
-                                        elevatorStatus={elevatorStatus}
-                                        loading={loading}
-                                    />
-                                )}
-                                {currentView === 'newRequest' && (
-                                    <NewRequestView 
-                                        newRequest={newRequest}
-                                        setNewRequest={setNewRequest}
-                                        submitServiceRequest={() => {}}
-                                        loading={loading}
-                                        error={error}
-                                        setCurrentView={setCurrentView}
-                                    />
-                                )}
+                <div className="min-h-screen bg-gray-50">
+                    <nav className="gradient-bg text-white shadow-lg">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                    <span className="text-2xl font-bold">SmartLift Intelligence</span>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <button className="px-4 py-2 rounded-lg bg-white text-blue-600 hover:bg-blue-50">
+                                        Refresh Data
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                    </nav>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        <FilterSection filters={filters} setFilters={setFilters} />
                         
-                        {mobileMenuOpen && (
-                            <div 
-                                className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
-                                onClick={() => setMobileMenuOpen(false)}
-                            />
+                        {loading ? (
+                            <div className="flex justify-center items-center h-64">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {hotels.map(hotel => (
+                                    <OpportunityCard key={hotel.id} hotel={hotel} />
+                                ))}
+                            </div>
                         )}
-                    </div>
-                </ErrorBoundary>
+                    </main>
+                </div>
             );
         };
 
-        // Final Render
+        // Render the app
         ReactDOM.render(
             <React.StrictMode>
                 <SmartLiftApp />
