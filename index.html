@@ -26,8 +26,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Make sure React hooks are available
+        const { useState, useEffect } = React;
+
         // Constants and Configurations
-        const API_BASE_URL = 'https://your-api-gateway-url.amazonaws.com/prod';
+        const API_BASE_URL = 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
         
         // Utility Functions
         const formatCurrency = (amount) => {
@@ -47,15 +50,25 @@
             return score;
         };
 
+        // Helper to build query string from filters
+        const buildQueryString = (filters) => {
+            const params = Object.entries(filters)
+                .filter(([k, v]) => v !== '' && v != null)
+                .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+                .join('&');
+            return params ? `?${params}` : '';
+        };
+
         // API Functions
         const apiCall = async (endpoint, options = {}) => {
             try {
-                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                const url = `${API_BASE_URL}${endpoint}${options.queryString || ''}`;
+                const response = await fetch(url, {
                     headers: {
                         'Content-Type': 'application/json',
                         ...options.headers
                     },
-                    ...options
+                    ...options,
                 });
 
                 if (!response.ok) {
@@ -109,7 +122,7 @@
 
                     <div className="mt-4">
                         <h4 className="text-sm font-semibold text-gray-900">Recent Reviews</h4>
-                        {hotel.recent_reviews ? (
+                        {hotel.recent_reviews && hotel.recent_reviews.length > 0 ? (
                             <div className="mt-2 text-sm text-gray-600">
                                 {hotel.recent_reviews.map((review, index) => (
                                     <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
@@ -205,9 +218,10 @@
             const loadHotels = async () => {
                 try {
                     setLoading(true);
+                    const queryString = buildQueryString(filters);
                     const response = await apiCall('/hotels', {
                         method: 'GET',
-                        params: filters
+                        queryString: queryString
                     });
                     setHotels(response.hotels || []);
                 } catch (error) {
@@ -240,7 +254,8 @@
                                     <span className="text-2xl font-bold">SmartLift Intelligence</span>
                                 </div>
                                 <div className="flex items-center space-x-4">
-                                    <button className="px-4 py-2 rounded-lg bg-white text-blue-600 hover:bg-blue-50">
+                                    <button className="px-4 py-2 rounded-lg bg-white text-blue-600 hover:bg-blue-50"
+                                            onClick={loadHotels}>
                                         Refresh Data
                                     </button>
                                 </div>
