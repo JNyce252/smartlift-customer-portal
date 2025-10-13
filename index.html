@@ -340,10 +340,11 @@
                         setProperties(mockData);
                         setLoading(false);
                     }, 1000);
-                } catch (error) {
-                    console.error('Failed to load properties:', error);
-                }
-            };
+               } catch (error) {
+    console.error('Failed to load properties:', error);
+    setLoading(false);
+    alert('Failed to load properties. Please try again later.');
+}
 
             const updateRealTimeData = () => {
                 setRealTimeData({
