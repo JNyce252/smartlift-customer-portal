@@ -3,13 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartLift Intelligence Platform</title>
+    <title>Southwest Cabs Intelligence Platform</title>
+    
+    <!-- External CSS -->
+    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- React and ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
     <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
         .animate-spin {
             animation: spin 1s linear infinite;
         }
@@ -26,7 +38,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Make sure React hooks are available
         const { useState, useEffect } = React;
 
         // Constants and Configurations
@@ -41,7 +52,6 @@
         };
 
         const calculateScore = (hotel) => {
-            // Implement scoring logic
             let score = 0;
             if (hotel.elevator_mentions > 0) score += 30;
             if (hotel.avg_sentiment < 0.5) score += 20;
@@ -50,158 +60,107 @@
             return score;
         };
 
-        // Helper to build query string from filters
-        const buildQueryString = (filters) => {
-            const params = Object.entries(filters)
-                .filter(([k, v]) => v !== '' && v != null)
-                .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-                .join('&');
-            return params ? `?${params}` : '';
-        };
-
-        // API Functions
-        const apiCall = async (endpoint, options = {}) => {
-            try {
-                const url = `${API_BASE_URL}${endpoint}${options.queryString || ''}`;
-                const response = await fetch(url, {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...options.headers
-                    },
-                    ...options,
-                });
-
-                if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+        // Real-time Analytics Components
+        const RealTimeAnalytics = () => {
+            const [realTimeData, setRealTimeData] = useState({
+                activeUsers: 0,
+                currentSessions: [],
+                recentActions: [],
+                systemMetrics: {
+                    cpuUsage: 0,
+                    memoryUsage: 0,
+                    apiLatency: 0
                 }
+            });
 
-                return await response.json();
-            } catch (error) {
-                console.error('API Call Error:', error);
-                throw error;
-            }
+            useEffect(() => {
+                // Simulated real-time data updates
+                const interval = setInterval(() => {
+                    setRealTimeData(prev => ({
+                        ...prev,
+                        activeUsers: Math.floor(Math.random() * 100),
+                        systemMetrics: {
+                            cpuUsage: Math.floor(Math.random() * 100),
+                            memoryUsage: Math.floor(Math.random() * 100),
+                            apiLatency: Math.floor(Math.random() * 1000)
+                        }
+                    }));
+                }, 3000);
+
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+                    <ActiveUsersMetric data={realTimeData.activeUsers} />
+                    <SystemMetrics metrics={realTimeData.systemMetrics} />
+                    <ActivityFeed actions={realTimeData.recentActions} />
+                </div>
+            );
         };
 
-        // Components
-        const OpportunityCard = ({ hotel }) => {
-            const score = calculateScore(hotel);
-            
+        const ActiveUsersMetric = ({ data }) => {
             return (
-                <div className="bg-white rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h3 className="text-xl font-bold text-gray-900">{hotel.name}</h3>
-                            <p className="text-gray-600">{hotel.address}</p>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-2xl font-bold text-blue-600">{score}/100</div>
-                            <div className="text-sm text-gray-500">Opportunity Score</div>
-                        </div>
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-4">
-                        <div>
-                            <div className="text-sm text-gray-500">Elevators</div>
-                            <div className="font-semibold">{hotel.elevator_count}</div>
-                        </div>
-                        <div>
-                            <div className="text-sm text-gray-500">Year Built</div>
-                            <div className="font-semibold">{hotel.year_built || 'Unknown'}</div>
-                        </div>
-                        <div>
-                            <div className="text-sm text-gray-500">Last Renovation</div>
-                            <div className="font-semibold">
-                                {hotel.last_renovation_date || 'No Data'}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-sm text-gray-500">Review Mentions</div>
-                            <div className="font-semibold">{hotel.elevator_mentions || 0}</div>
-                        </div>
-                    </div>
-
-                    <div className="mt-4">
-                        <h4 className="text-sm font-semibold text-gray-900">Recent Reviews</h4>
-                        {hotel.recent_reviews && hotel.recent_reviews.length > 0 ? (
-                            <div className="mt-2 text-sm text-gray-600">
-                                {hotel.recent_reviews.map((review, index) => (
-                                    <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
-                                        "{review.text.substring(0, 100)}..."
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-sm text-gray-500">No recent reviews</div>
-                        )}
-                    </div>
-
-                    <div className="mt-4 flex justify-end space-x-3">
-                        <button className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800">
-                            View Details
-                        </button>
-                        <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                            Start Outreach
-                        </button>
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">Active Users</h3>
+                    <div className="text-3xl font-bold text-blue-600">
+                        {data}
                     </div>
                 </div>
             );
         };
 
-        const FilterSection = ({ filters, setFilters }) => (
-            <div className="bg-white p-4 rounded-lg shadow mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">City</label>
-                        <input
-                            type="text"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            value={filters.city}
-                            onChange={(e) => setFilters({...filters, city: e.target.value})}
-                            placeholder="Enter city..."
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Min Elevators</label>
-                        <input
-                            type="number"
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            value={filters.minElevators}
-                            onChange={(e) => setFilters({...filters, minElevators: e.target.value})}
-                            min="0"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Property Type</label>
-                        <select
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            value={filters.propertyType}
-                            onChange={(e) => setFilters({...filters, propertyType: e.target.value})}
-                        >
-                            <option value="">All Types</option>
-                            <option value="hotel">Hotels</option>
-                            <option value="motel">Motels</option>
-                            <option value="resort">Resorts</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Priority Level</label>
-                        <select
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            value={filters.priorityLevel}
-                            onChange={(e) => setFilters({...filters, priorityLevel: e.target.value})}
-                        >
-                            <option value="">All Priorities</option>
-                            <option value="high">High Priority</option>
-                            <option value="medium">Medium Priority</option>
-                            <option value="low">Low Priority</option>
-                        </select>
+        const SystemMetrics = ({ metrics }) => {
+            return (
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">System Health</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <span>CPU Usage: </span>
+                            <span className="font-bold">{metrics.cpuUsage}%</span>
+                        </div>
+                        <div>
+                            <span>Memory Usage: </span>
+                            <span className="font-bold">{metrics.memoryUsage}%</span>
+                        </div>
+                        <div>
+                            <span>API Latency: </span>
+                            <span className="font-bold">{metrics.apiLatency}ms</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-        );
+            );
+        };
+
+        const ActivityFeed = ({ actions }) => {
+            const sampleActions = [
+                { type: 'view', description: 'User viewed property details', timestamp: new Date() },
+                { type: 'update', description: 'Maintenance schedule updated', timestamp: new Date() },
+                { type: 'alert', description: 'New maintenance request', timestamp: new Date() }
+            ];
+
+            return (
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">Activity Feed</h3>
+                    <div className="space-y-4">
+                        {sampleActions.map((action, index) => (
+                            <div key={index} className="flex items-center space-x-3">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <div>
+                                    <p className="font-medium">{action.description}</p>
+                                    <p className="text-sm text-gray-500">
+                                        {action.timestamp.toLocaleTimeString()}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
 
         // Main App Component
-        const SmartLiftApp = () => {
+        const App = () => {
             const [hotels, setHotels] = useState([]);
             const [loading, setLoading] = useState(true);
             const [filters, setFilters] = useState({
@@ -218,29 +177,25 @@
             const loadHotels = async () => {
                 try {
                     setLoading(true);
-                    const queryString = buildQueryString(filters);
-                    const response = await apiCall('/hotels', {
-                        method: 'GET',
-                        queryString: queryString
-                    });
-                    setHotels(response.hotels || []);
+                    // Simulated API call
+                    setTimeout(() => {
+                        setHotels([
+                            {
+                                id: 1,
+                                name: 'Sample Hotel',
+                                address: '123 Main St, Austin, TX',
+                                elevator_count: 4,
+                                year_built: 1995,
+                                elevator_mentions: 3,
+                                recent_reviews: [
+                                    { text: 'Elevators need updating...' }
+                                ]
+                            }
+                        ]);
+                        setLoading(false);
+                    }, 1000);
                 } catch (error) {
                     console.error('Failed to load hotels:', error);
-                    // Load sample data for development
-                    setHotels([
-                        {
-                            id: 1,
-                            name: 'Sample Hotel',
-                            address: '123 Main St, Austin, TX',
-                            elevator_count: 4,
-                            year_built: 1995,
-                            elevator_mentions: 3,
-                            recent_reviews: [
-                                { text: 'Elevators need updating...' }
-                            ]
-                        }
-                    ]);
-                } finally {
                     setLoading(false);
                 }
             };
@@ -264,8 +219,7 @@
                     </nav>
 
                     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        <FilterSection filters={filters} setFilters={setFilters} />
-                        
+                        <RealTimeAnalytics />
                         {loading ? (
                             <div className="flex justify-center items-center h-64">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -273,7 +227,14 @@
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {hotels.map(hotel => (
-                                    <OpportunityCard key={hotel.id} hotel={hotel} />
+                                    <div key={hotel.id} className="bg-white rounded-lg shadow-lg p-6">
+                                        <h3 className="text-xl font-bold">{hotel.name}</h3>
+                                        <p className="text-gray-600">{hotel.address}</p>
+                                        <div className="mt-4">
+                                            <p>Elevators: {hotel.elevator_count}</p>
+                                            <p>Year Built: {hotel.year_built}</p>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -285,7 +246,7 @@
         // Render the app
         ReactDOM.render(
             <React.StrictMode>
-                <SmartLiftApp />
+                <App />
             </React.StrictMode>,
             document.getElementById('root')
         );
