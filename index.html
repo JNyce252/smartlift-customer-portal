@@ -117,15 +117,331 @@
                 </div>
             );
         };
+// Add this to your script section after the existing code but before the App component
 
+// API Service
+const ApiService = {
+    baseUrl: 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod',
+    
+    async fetchProperties(filters = {}) {
+        try {
+            const queryParams = new URLSearchParams(filters).toString();
+            const response = await fetch(`${this.baseUrl}/properties?${queryParams}`);
+            if (!response.ok) throw new Error('Failed to fetch properties');
+            return await response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
+    },
+
+    async fetchPropertyDetails(propertyId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/properties/${propertyId}`);
+            if (!response.ok) throw new Error('Failed to fetch property details');
+            return await response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
+    },
+
+    async fetchPropertyAnalytics(propertyId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/properties/${propertyId}/analytics`);
+            if (!response.ok) throw new Error('Failed to fetch analytics');
+            return await response.json();
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
+    }
+};
+
+// Detailed Property View Component
+const PropertyDetail = ({ propertyId, onClose }) => {
+    const [property, setProperty] = useState(null);
+    const [analytics, setAnalytics] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadPropertyData();
+    }, [propertyId]);
+
+    const loadPropertyData = async () => {
+        try {
+            setLoading(true);
+            const [propertyData, analyticsData] = await Promise.all([
+                ApiService.fetchPropertyDetails(propertyId),
+                ApiService.fetchPropertyAnalytics(propertyId)
+            ]);
+            setProperty(propertyData);
+            setAnalytics(analyticsData);
+        } catch (error) {
+            console.error('Failed to load property data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto">
+            <div className="relative top-0 mx-auto max-w-6xl my-8 bg-white rounded-lg shadow-xl">
+                <div className="p-6">
+                    <div className="flex justify-between items-start mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800">{property?.name}</h2>
+                        <button 
+                            onClick={onClose}
+                            className="text-gray-500 hover:text-gray-700"
+                        >
+                            <i className="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Property Details */}
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Property Information</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <InfoCard label="Address" value={property?.address} />
+                                <InfoCard label="Year Built" value={property?.year_built} />
+                                <InfoCard label="Elevator Count" value={property?.elevator_count} />
+                                <InfoCard label="Last Renovation" value={property?.last_renovation_date || 'N/A'} />
+                            </div>
+                        </div>
+
+                        {/* Analytics Charts */}
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Analytics</h3>
+                            <PropertyAnalytics data={analytics} />
+                        </div>
+                    </div>
+
+                    {/* Maintenance History */}
+                    <div className="mt-6">
+                        <h3 className="text-lg font-semibold mb-4">Maintenance History</h3>
+                        <MaintenanceTimeline history={property?.maintenance_history} />
+                    </div>
+
+                    {/* Reviews and Sentiment */}
+                    <div className="mt-6">
+                        <h3 className="text-lg font-semibold mb-4">Customer Reviews</h3>
+                        <ReviewsAnalysis reviews={property?.reviews} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Property Analytics Component with Charts
+const PropertyAnalytics = ({ data }) => {
+    return (
+        <div className="space-y-6">
+            {/* Elevator Usage Chart */}
+            <div className="bg-white p-4 rounded-lg shadow">
+                <h4 className="text-sm font-semibold mb-2">Elevator Usage Trends</h4>
+                <canvas id="elevatorUsageChart"></canvas>
+            </div>
+
+            {/* Maintenance Cost Chart */}
+            <div className="bg-white p-4 rounded-lg shadow">
+                <h4 className="text-sm font-semibold mb-2">Maintenance Costs</h4>
+                <canvas id="maintenanceCostChart"></canvas>
+            </div>
+
+            {/* Sentiment Analysis Chart */}
+            <div className="bg-white p-4 rounded-lg shadow">
+                <h4 className="text-sm font-semibold mb-2">Review Sentiment Trend</h4>
+                <canvas id="sentimentChart"></canvas>
+            </div>
+        </div>
+    );
+};
+
+// Property Filtering Component
+const PropertyFilters = ({ onFilterChange }) => {
+    const [filters, setFilters] = useState({
+        city: '',
+        minElevators: '',
+        maxAge: '',
+        opportunityScore: '',
+        propertyType: ''
+    });
+
+    const handleFilterChange = (key, value) => {
+        const newFilters = { ...filters, [key]: value };
+        setFilters(newFilters);
+        onFilterChange(newFilters);
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <FilterInput 
+                    label="City"
+                    value={filters.city}
+                    onChange={(value) => handleFilterChange('city', value)}
+                />
+                <FilterInput 
+                    label="Min Elevators"
+                    type="number"
+                    value={filters.minElevators}
+                    onChange={(value) => handleFilterChange('minElevators', value)}
+                />
+                <FilterInput 
+                    label="Max Building Age"
+                    type="number"
+                    value={filters.maxAge}
+                    onChange={(value) => handleFilterChange('maxAge', value)}
+                />
+                <FilterSelect 
+                    label="Property Type"
+                    value={filters.propertyType}
+                    options={[
+                        { value: '', label: 'All Types' },
+                        { value: 'hotel', label: 'Hotel' },
+                        { value: 'office', label: 'Office' },
+                        { value: 'residential', label: 'Residential' }
+                    ]}
+                    onChange={(value) => handleFilterChange('propertyType', value)}
+                />
+                <FilterInput 
+                    label="Min Opportunity Score"
+                    type="number"
+                    value={filters.opportunityScore}
+                    onChange={(value) => handleFilterChange('opportunityScore', value)}
+                />
+            </div>
+        </div>
+    );
+};
         // Main App Component
-        const App = () => {
-            const [realTimeData, setRealTimeData] = useState({
-                activeUsers: 0,
-                cpuUsage: 0,
-                memoryUsage: 0,
-                apiLatency: 0
-            });
+const App = () => {
+    const [realTimeData, setRealTimeData] = useState({
+        activeUsers: 0,
+        cpuUsage: 0,
+        memoryUsage: 0,
+        apiLatency: 0
+    });
+    const [properties, setProperties] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedProperty, setSelectedProperty] = useState(null);
+    const [filters, setFilters] = useState({});
+
+    useEffect(() => {
+        loadProperties();
+        const interval = setInterval(updateRealTimeData, 3000);
+        return () => clearInterval(interval);
+    }, [filters]);
+
+    const loadProperties = async () => {
+        try {
+            setLoading(true);
+            // Temporary mock data until API is connected
+            setTimeout(() => {
+                const mockData = [
+                    {
+                        id: 1,
+                        name: 'Sample Hotel',
+                        address: '123 Main St, Austin, TX',
+                        elevator_count: 4,
+                        year_built: 1995,
+                        elevator_mentions: 3,
+                        opportunity_score: 85
+                    },
+                    {
+                        id: 2,
+                        name: 'Luxury Suites',
+                        address: '456 Elm St, Dallas, TX',
+                        elevator_count: 6,
+                        year_built: 2005,
+                        elevator_mentions: 1,
+                        opportunity_score: 65
+                    },
+                    {
+                        id: 3,
+                        name: 'Budget Inn',
+                        address: '789 Oak St, Houston, TX',
+                        elevator_count: 2,
+                        year_built: 1980,
+                        elevator_mentions: 5,
+                        opportunity_score: 95
+                    }
+                ];
+                setProperties(mockData);
+                setLoading(false);
+            }, 1000);
+            
+            // Once API is ready, replace setTimeout with:
+            // const data = await ApiService.fetchProperties(filters);
+            // setProperties(data);
+        } catch (error) {
+            console.error('Failed to load properties:', error);
+        }
+    };
+
+    const updateRealTimeData = () => {
+        setRealTimeData({
+            activeUsers: Math.floor(Math.random() * 100),
+            cpuUsage: Math.floor(Math.random() * 100),
+            memoryUsage: Math.floor(Math.random() * 100),
+            apiLatency: Math.floor(Math.random() * 1000)
+        });
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-100">
+            <NavBar />
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <MetricCard title="Active Users" value={realTimeData.activeUsers} icon="fas fa-users" />
+                    <MetricCard title="CPU Usage" value={`${realTimeData.cpuUsage}%`} icon="fas fa-microchip" />
+                    <MetricCard title="Memory Usage" value={`${realTimeData.memoryUsage}%`} icon="fas fa-memory" />
+                    <MetricCard title="API Latency" value={`${realTimeData.apiLatency}ms`} icon="fas fa-tachometer-alt" />
+                </div>
+
+                <PropertyFilters onFilterChange={setFilters} />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {loading ? (
+                        <div className="col-span-3 flex justify-center items-center h-64">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                        </div>
+                    ) : (
+                        <>
+                            {properties.map(property => (
+                                <div 
+                                    key={property.id}
+                                    onClick={() => setSelectedProperty(property.id)}
+                                    className="cursor-pointer"
+                                >
+                                    <PropertyCard property={property} />
+                                </div>
+                            ))}
+                        </>
+                    )}
+                </div>
+
+                {selectedProperty && (
+                    <PropertyDetail 
+                        propertyId={selectedProperty}
+                        onClose={() => setSelectedProperty(null)}
+                    />
+                )}
+            </main>
+        </div>
+    );
+};
+
             const [hotels, setHotels] = useState([]);
             const [loading, setLoading] = useState(true);
 
