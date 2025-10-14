@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, Database, Settings, DollarSign, Home, Building2, TrendingUp, Search, Filter, ChevronRight } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { 
+  Zap, Search, Building2, TrendingUp, Database, Settings, 
+  Home, Plus, Filter, MapPin, Phone, Mail, Calendar,  // MapPin is here
+  DollarSign, Users, Clock, CheckCircle, XCircle,
+  AlertCircle, ChevronRight, Edit, Trash2, Save, X
+} from 'lucide-react';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
