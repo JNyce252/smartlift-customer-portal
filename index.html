@@ -1,546 +1,707 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartLift Intelligence Platform</title>
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, Zap, Database, Code, Palette, FileText, Settings, Cloud, Users } from 'lucide-react';
+
+const SmartLiftUI = () => {
+  const [activeSection, setActiveSection] = useState('overview');
+  const [expandedItems, setExpandedItems] = useState({});
+
+  const toggleItem = (item) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [item]: !prev[item]
+    }));
+  };
+
+  const projectStructure = {
+    overview: {
+      title: 'SmartLift UI Overview',
+      icon: <Zap className="w-6 h-6" />,
+      content: {
+        projectName: 'SmartLift UI',
+        tagline: 'Intelligent Hotel Lead Management & Elevator Intelligence Platform',
+        description: 'AWS-powered platform for analyzing hotel reviews, identifying elevator service opportunities, and generating qualified leads for elevator service companies.',
+        techStack: ['AWS Lambda', 'Aurora Serverless', 'Google Places API', 'AWS Comprehend', 'React', 'Python'],
+        status: 'In Development',
+        coreFeatures: [
+          'Hotel data scraping and enrichment',
+          'Elevator-specific review sentiment analysis',
+          'AI-powered service opportunity identification',
+          'Lead scoring and prioritization',
+          'Competitor proximity analysis',
+          'Building characteristics estimation'
+        ]
+      }
+    },
     
-    <!-- External CSS -->
-    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- React and ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        .gradient-bg {
-            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-        }
-    </style>
-</head>
-<body class="bg-gray-100">
-    <div id="root"></div>
-
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-
-        // Utility Functions
-        const calculateScore = (hotel) => {
-            let score = 0;
-            if (hotel.elevator_mentions > 0) score += 30;
-            if (hotel.avg_sentiment < 0.5) score += 20;
-            if (hotel.year_built < 2000) score += 25;
-            if (!hotel.last_renovation_date) score += 25;
-            return score;
-        };
-
-        // API Service
-        const ApiService = {
-            baseUrl: 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod',
-            
-            async fetchProperties(filters = {}) {
-                try {
-                    const queryParams = new URLSearchParams(filters).toString();
-                    const response = await fetch(`${this.baseUrl}/properties?${queryParams}`);
-                    if (!response.ok) throw new Error('Failed to fetch properties');
-                    return await response.json();
-                } catch (error) {
-                    console.error('API Error:', error);
-                    throw error;
-                }
+    architecture: {
+      title: 'System Architecture',
+      icon: <Database className="w-6 h-6" />,
+      content: {
+        backend: {
+          title: 'Backend Infrastructure',
+          components: [
+            {
+              name: 'AWS Lambda Functions',
+              purpose: 'Serverless compute for hotel intelligence analysis',
+              file: 'lambda_function.py',
+              features: [
+                'Hotel data retrieval from Google Places API',
+                'Review sentiment analysis using AWS Comprehend',
+                'Elevator mention extraction and categorization',
+                'Building characteristic estimation',
+                'Service opportunity identification',
+                'Database operations via RDS Data API'
+              ]
             },
-
-            async fetchPropertyDetails(propertyId) {
-                try {
-                    const response = await fetch(`${this.baseUrl}/properties/${propertyId}`);
-                    if (!response.ok) throw new Error('Failed to fetch property details');
-                    return await response.json();
-                } catch (error) {
-                    console.error('API Error:', error);
-                    throw error;
-                }
+            {
+              name: 'Aurora Serverless (PostgreSQL)',
+              purpose: 'Scalable database for hotel and intelligence data',
+              tables: [
+                'hotels - Core hotel information',
+                'elevator_intelligence - Analysis results and insights',
+                'service_opportunities - Identified sales leads',
+                'review_analysis - Detailed review sentiment data'
+              ]
             },
-
-            async fetchPropertyAnalytics(propertyId) {
-                try {
-                    const response = await fetch(`${this.baseUrl}/properties/${propertyId}/analytics`);
-                    if (!response.ok) throw new Error('Failed to fetch analytics');
-                    return await response.json();
-                } catch (error) {
-                    console.error('API Error:', error);
-                    throw error;
-                }
+            {
+              name: 'AWS Comprehend',
+              purpose: 'NLP service for sentiment analysis',
+              usage: 'Analyzing elevator-related review content for sentiment and issues'
             }
-        };
-
-        // Components
-        const NavBar = () => (
-            <nav className="gradient-bg text-white shadow-lg">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex items-center justify-between">
-                        <span className="text-2xl font-bold">SmartLift Intelligence</span>
-                        <div className="flex space-x-4">
-                            <a href="#" className="hover:text-gray-200">Dashboard</a>
-                            <a href="#" className="hover:text-gray-200">Properties</a>
-                            <a href="#" className="hover:text-gray-200">Analytics</a>
-                            <a href="#" className="hover:text-gray-200">Reports</a>
-                        </div>
-                    </div>
-                </div>
-            </nav>
-        );
-
-        const MetricCard = ({ title, value, icon }) => (
-            <div className="bg-white rounded-lg shadow-md p-6 flex items-center">
-                <div className={`text-3xl ${icon} mr-4 text-blue-500`}></div>
-                <div>
-                    <h3 className="text-lg font-semibold text-gray-700">{title}</h3>
-                    <p className="text-2xl font-bold text-blue-600">{value}</p>
-                </div>
-            </div>
-        );
-
-        const ActivityFeed = ({ actions }) => (
-            <div className="bg-white rounded-lg shadow-md p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-700">Activity Feed</h3>
-                <div className="space-y-4">
-                    {actions.map((action, index) => (
-                        <div key={index} className="flex items-center space-x-3 border-b pb-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                            <div>
-                                <p className="font-medium text-gray-800">{action.description}</p>
-                                <p className="text-sm text-gray-500">{action.timestamp}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
+          ]
+        },
         
-        const PropertyCard = ({ property }) => {
-            return (
-                <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">{property.name}</h3>
-                    <p className="text-gray-600 mb-4">{property.address}</p>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <p className="text-sm text-gray-500">Elevators</p>
-                            <p className="font-semibold">{property.elevator_count}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Year Built</p>
-                            <p className="font-semibold">{property.year_built}</p>
-                        </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-500">Opportunity Score</span>
-                        <span className="text-lg font-bold text-blue-600">
-                            {property.opportunity_score || calculateScore(property)}/100
-                        </span>
-                    </div>
-                </div>
-            );
-        };
-
-        const InfoCard = ({ label, value }) => {
-            return (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="text-sm text-gray-500">{label}</div>
-                    <div className="font-semibold text-gray-900">{value}</div>
-                </div>
-            );
-        };
-
-        const PropertyAnalytics = ({ data }) => {
-            useEffect(() => {
-                if (data) {
-                    // Initialize charts here using Chart.js
-                    const ctx = document.getElementById('elevatorUsageChart').getContext('2d');
-                    new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: data.usage?.map(d => d.date) || [],
-                            datasets: [{
-                                label: 'Usage',
-                                data: data.usage?.map(d => d.value) || [],
-                                borderColor: '#3B82F6',
-                                tension: 0.1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    });
-                }
-            }, [data]);
-
-            return (
-                <div className="space-y-6">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <h4 className="text-sm font-semibold mb-2">Elevator Usage Trends</h4>
-                        <div style={{ height: '200px' }}>
-                            <canvas id="elevatorUsageChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const MaintenanceTimeline = ({ history }) => {
-            if (!history || history.length === 0) {
-                return <div className="text-gray-500">No maintenance history available</div>;
+        frontend: {
+          title: 'Frontend Application',
+          framework: 'React with Tailwind CSS',
+          components: [
+            'Dashboard - Overview of leads and opportunities',
+            'Hotel List - Searchable/filterable hotel database',
+            'Intelligence View - Detailed elevator analysis per hotel',
+            'Lead Management - Prioritized service opportunities',
+            'Analytics - Metrics and performance tracking'
+          ]
+        },
+        
+        integrations: {
+          title: 'External Integrations',
+          services: [
+            'Google Places API - Hotel data and reviews',
+            'AWS Secrets Manager - API key management',
+            'CloudWatch - Logging and monitoring'
+          ]
+        }
+      }
+    },
+    
+    dataModel: {
+      title: 'Data Models & Schema',
+      icon: <Database className="w-6 h-6" />,
+      content: {
+        hotels: {
+          table: 'hotels',
+          fields: {
+            id: 'SERIAL PRIMARY KEY',
+            name: 'VARCHAR(255)',
+            city: 'VARCHAR(100)',
+            state: 'VARCHAR(50)',
+            address: 'VARCHAR(500)',
+            google_place_id: 'VARCHAR(255) UNIQUE',
+            rating: 'DECIMAL(2,1)',
+            total_reviews: 'INTEGER',
+            created_at: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+          }
+        },
+        
+        elevator_intelligence: {
+          table: 'elevator_intelligence',
+          fields: {
+            id: 'SERIAL PRIMARY KEY',
+            hotel_id: 'INTEGER REFERENCES hotels(id)',
+            hotel_name: 'VARCHAR(255)',
+            estimated_floors: 'INTEGER',
+            estimated_elevators: 'INTEGER',
+            building_age_category: 'VARCHAR(50)',
+            modernization_priority: 'VARCHAR(20)',
+            elevator_reputation_score: 'DECIMAL(3,1)',
+            total_elevator_mentions: 'INTEGER',
+            common_issues: 'JSONB',
+            service_opportunities: 'JSONB',
+            service_urgency: 'VARCHAR(20)',
+            competitor_analysis: 'JSONB',
+            analysis_date: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+          }
+        }
+      }
+    },
+    
+    codeBase: {
+      title: 'Code Structure',
+      icon: <Code className="w-6 h-6" />,
+      content: {
+        lambda: {
+          title: 'Lambda Function (Python)',
+          mainFile: 'lambda_function.py',
+          functions: [
+            {
+              name: 'enhance_hotel_intelligence',
+              purpose: 'Main handler - orchestrates the analysis pipeline',
+              parameters: 'event, context',
+              returns: 'Analysis results with status and metrics'
+            },
+            {
+              name: 'get_enhanced_hotel_details',
+              purpose: 'Fetch hotel data from Google Places API',
+              parameters: 'place_id, api_key',
+              returns: 'Hotel details including reviews'
+            },
+            {
+              name: 'analyze_elevator_reviews',
+              purpose: 'Extract and analyze elevator mentions',
+              parameters: 'reviews, comprehend_client',
+              returns: 'Sentiment analysis and issue categorization'
+            },
+            {
+              name: 'estimate_building_characteristics',
+              purpose: 'Estimate building specs from hotel data',
+              parameters: 'hotel_details, address',
+              returns: 'Building profile (floors, elevators, age)'
+            },
+            {
+              name: 'identify_service_opportunities',
+              purpose: 'Generate qualified service leads',
+              parameters: 'elevator_analysis, building_analysis',
+              returns: 'Prioritized opportunity list'
+            },
+            {
+              name: 'store_elevator_intelligence',
+              purpose: 'Persist analysis to database',
+              parameters: 'rds_data, cluster_arn, secret_arn, database_name, intelligence_data',
+              returns: 'Success confirmation'
             }
-
-            return (
-                <div className="space-y-4">
-                    {history.map((item, index) => (
-                        <div key={index} className="flex items-start space-x-3">
-                            <div className="w-2 h-2 mt-2 rounded-full bg-blue-500"></div>
-                            <div>
-                                <p className="font-medium">{item.description}</p>
-                                <p className="text-sm text-gray-500">{item.date}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            );
-        };
-        const ReviewsAnalysis = ({ reviews }) => {
-            if (!reviews || reviews.length === 0) {
-                return <div className="text-gray-500">No reviews available</div>;
+          ]
+        },
+        
+        frontend: {
+          title: 'React Components',
+          structure: {
+            'src/': {
+              'components/': [
+                'Dashboard.jsx - Main dashboard view',
+                'HotelList.jsx - Hotel data table with filters',
+                'HotelDetails.jsx - Individual hotel intelligence view',
+                'OpportunityCard.jsx - Service opportunity display',
+                'AnalyticsChart.jsx - Data visualization',
+                'SearchBar.jsx - Global search functionality'
+              ],
+              'pages/': [
+                'Home.jsx - Landing page',
+                'Hotels.jsx - Hotel management page',
+                'Opportunities.jsx - Lead management page',
+                'Analytics.jsx - Reporting and metrics'
+              ],
+              'utils/': [
+                'api.js - API client for Lambda functions',
+                'dataProcessing.js - Data transformation utilities',
+                'constants.js - App-wide constants'
+              ],
+              'App.jsx': 'Main application component',
+              'index.jsx': 'Application entry point'
             }
-
-            return (
-                <div className="space-y-4">
-                    {reviews.map((review, index) => (
-                        <div key={index} className="bg-gray-50 p-4 rounded-lg">
-                            <p className="text-gray-800">{review.text}</p>
-                            <div className="flex justify-between mt-2">
-                                <span className="text-sm text-gray-500">{review.date}</span>
-                                <span className={`text-sm font-medium ${
-                                    review.sentiment > 0.5 ? 'text-green-600' : 'text-red-600'
-                                }`}>
-                                    {review.sentiment > 0.5 ? 'Positive' : 'Negative'}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            );
-        };
-
-        const PropertyFilters = ({ onFilterChange }) => {
-            const [filters, setFilters] = useState({
-                city: '',
-                minElevators: '',
-                maxAge: '',
-                opportunityScore: '',
-                propertyType: ''
-            });
-
-            const handleFilterChange = (key, value) => {
-                const newFilters = { ...filters, [key]: value };
-                setFilters(newFilters);
-                onFilterChange(newFilters);
-            };
-
-            return (
-                <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                        <FilterInput 
-                            label="City"
-                            value={filters.city}
-                            onChange={(value) => handleFilterChange('city', value)}
-                        />
-                        <FilterInput 
-                            label="Min Elevators"
-                            type="number"
-                            value={filters.minElevators}
-                            onChange={(value) => handleFilterChange('minElevators', value)}
-                        />
-                        <FilterInput 
-                            label="Max Building Age"
-                            type="number"
-                            value={filters.maxAge}
-                            onChange={(value) => handleFilterChange('maxAge', value)}
-                        />
-                        <FilterSelect 
-                            label="Property Type"
-                            value={filters.propertyType}
-                            options={[
-                                { value: '', label: 'All Types' },
-                                { value: 'hotel', label: 'Hotel' },
-                                { value: 'office', label: 'Office' },
-                                { value: 'residential', label: 'Residential' }
-                            ]}
-                            onChange={(value) => handleFilterChange('propertyType', value)}
-                        />
-                        <FilterInput 
-                            label="Min Opportunity Score"
-                            type="number"
-                            value={filters.opportunityScore}
-                            onChange={(value) => handleFilterChange('opportunityScore', value)}
-                        />
-                    </div>
-                </div>
-            );
-        };
-
-        const FilterInput = ({ label, value, onChange, type = "text" }) => {
-            return (
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {label}
-                    </label>
-                    <input
-                        type={type}
-                        value={value}
-                        onChange={(e) => onChange(e.target.value)}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                </div>
-            );
-        };
-
-        const FilterSelect = ({ label, value, options, onChange }) => {
-            return (
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {label}
-                    </label>
-                    <select
-                        value={value}
-                        onChange={(e) => onChange(e.target.value)}
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    >
-                        {options.map(option => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            );
-        };
-
-        const PropertyDetail = ({ propertyId, onClose }) => {
-            const [property, setProperty] = useState(null);
-            const [analytics, setAnalytics] = useState(null);
-            const [loading, setLoading] = useState(true);
-
-            useEffect(() => {
-                loadPropertyData();
-            }, [propertyId]);
-
-            const loadPropertyData = async () => {
-                try {
-                    setLoading(true);
-                    const [propertyData, analyticsData] = await Promise.all([
-                        ApiService.fetchPropertyDetails(propertyId),
-                        ApiService.fetchPropertyAnalytics(propertyId)
-                    ]);
-                    setProperty(propertyData);
-                    setAnalytics(analyticsData);
-                } catch (error) {
-                    console.error('Failed to load property data:', error);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            if (loading) {
-                return (
-                    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                    </div>
-                );
+          }
+        }
+      }
+    },
+    
+    uiDesign: {
+      title: 'UI/UX Design',
+      icon: <Palette className="w-6 h-6" />,
+      content: {
+        designSystem: {
+          colors: {
+            primary: '#3B82F6 (Blue)',
+            secondary: '#10B981 (Green)',
+            accent: '#F59E0B (Amber)',
+            danger: '#EF4444 (Red)',
+            background: '#1F2937 (Dark Gray)',
+            surface: '#374151 (Medium Gray)',
+            text: '#F9FAFB (Light Gray)'
+          },
+          typography: {
+            headings: 'Inter, sans-serif (Bold)',
+            body: 'Inter, sans-serif (Regular)',
+            monospace: 'Fira Code, monospace'
+          },
+          spacing: 'Tailwind default scale (4px base)',
+          borderRadius: {
+            sm: '0.375rem',
+            md: '0.5rem',
+            lg: '0.75rem',
+            xl: '1rem'
+          }
+        },
+        
+        layouts: [
+          {
+            page: 'Dashboard',
+            description: 'Overview cards with key metrics, recent opportunities, and quick actions',
+            sections: ['Metrics Grid', 'Recent Leads', 'Urgency Chart', 'Quick Actions']
+          },
+          {
+            page: 'Hotel List',
+            description: 'Searchable table with inline filters and sorting',
+            sections: ['Search/Filter Bar', 'Data Table', 'Pagination', 'Bulk Actions']
+          },
+          {
+            page: 'Hotel Intelligence',
+            description: 'Detailed view of individual hotel analysis',
+            sections: ['Hotel Header', 'Building Profile', 'Review Analysis', 'Opportunities List', 'Competitor Map']
+          },
+          {
+            page: 'Opportunities',
+            description: 'Prioritized lead management interface',
+            sections: ['Urgency Filter', 'Opportunity Cards', 'Contact Actions', 'Status Tracking']
+          }
+        ]
+      }
+    },
+    
+    features: {
+      title: 'Feature Specifications',
+      icon: <Settings className="w-6 h-6" />,
+      content: {
+        coreFeatures: [
+          {
+            name: 'Hotel Data Scraping',
+            description: 'Automated collection of hotel information from Google Places',
+            status: 'Implemented',
+            details: [
+              'Batch processing of hotels by city/state',
+              'Automatic deduplication via google_place_id',
+              'Review collection and storage',
+              'Rating and metadata extraction'
+            ]
+          },
+          {
+            name: 'Elevator Intelligence Analysis',
+            description: 'AI-powered analysis of elevator-related content',
+            status: 'Implemented',
+            details: [
+              'Keyword-based elevator mention detection',
+              'Sentiment analysis using AWS Comprehend',
+              'Issue categorization (breakdowns, speed, noise, etc.)',
+              'Reputation scoring (0-10 scale)',
+              'Service urgency calculation'
+            ]
+          },
+          {
+            name: 'Building Estimation',
+            description: 'Intelligent estimation of building characteristics',
+            status: 'Implemented',
+            details: [
+              'Floor count estimation from hotel name/type',
+              'Elevator count prediction',
+              'Building age categorization',
+              'Modernization priority assessment'
+            ]
+          },
+          {
+            name: 'Service Opportunity Generation',
+            description: 'Automated lead qualification and prioritization',
+            status: 'Implemented',
+            details: [
+              'Multi-factor opportunity scoring',
+              'Urgency-based prioritization',
+              'Issue-specific recommendations',
+              'Potential value estimation'
+            ]
+          },
+          {
+            name: 'Dashboard Analytics',
+            description: 'Visual insights and performance metrics',
+            status: 'In Progress',
+            details: [
+              'Total hotels analyzed',
+              'Opportunities by urgency level',
+              'Top issues across market',
+              'Geographic opportunity heat map'
+            ]
+          }
+        ],
+        
+        upcomingFeatures: [
+          'Email automation for lead outreach',
+          'CRM integration (Salesforce, HubSpot)',
+          'Competitive pricing intelligence',
+          'Maintenance contract expiration tracking',
+          'Mobile app for field sales teams',
+          'Custom report generation'
+        ]
+      }
+    },
+    
+    deployment: {
+      title: 'Deployment & DevOps',
+      icon: <Cloud className="w-6 h-6" />,
+      content: {
+        awsServices: [
+          {
+            service: 'AWS Lambda',
+            configuration: {
+              runtime: 'Python 3.11',
+              timeout: '5 minutes',
+              memory: '512 MB',
+              triggers: 'EventBridge scheduled rules, API Gateway'
             }
+          },
+          {
+            service: 'Aurora Serverless v2',
+            configuration: {
+              engine: 'PostgreSQL 14',
+              minCapacity: '0.5 ACU',
+              maxCapacity: '2 ACU',
+              backupRetention: '7 days'
+            }
+          },
+          {
+            service: 'API Gateway',
+            configuration: {
+              type: 'REST API',
+              authentication: 'API Key + IAM',
+              throttling: '1000 requests/second'
+            }
+          },
+          {
+            service: 'CloudFront',
+            configuration: {
+              purpose: 'Frontend distribution',
+              caching: 'Optimized for React SPA',
+              ssl: 'ACM certificate'
+            }
+          }
+        ],
+        
+        cicd: {
+          tool: 'GitHub Actions',
+          pipelines: [
+            {
+              name: 'Lambda Deployment',
+              trigger: 'Push to main branch (backend/)',
+              steps: ['Test', 'Package', 'Deploy to Lambda', 'Run integration tests']
+            },
+            {
+              name: 'Frontend Deployment',
+              trigger: 'Push to main branch (frontend/)',
+              steps: ['Build React app', 'Upload to S3', 'Invalidate CloudFront cache']
+            }
+          ]
+        },
+        
+        environments: [
+          { name: 'Development', purpose: 'Feature development and testing' },
+          { name: 'Staging', purpose: 'Pre-production validation' },
+          { name: 'Production', purpose: 'Live customer-facing environment' }
+        ]
+      }
+    },
+    
+    documentation: {
+      title: 'Documentation',
+      icon: <FileText className="w-6 h-6" />,
+      content: {
+        technical: [
+          {
+            title: 'API Documentation',
+            sections: [
+              'Authentication & Authorization',
+              'Endpoint Reference',
+              'Request/Response Schemas',
+              'Error Codes',
+              'Rate Limiting',
+              'Webhooks'
+            ]
+          },
+          {
+            title: 'Database Schema',
+            sections: [
+              'Entity Relationship Diagram',
+              'Table Definitions',
+              'Indexes and Constraints',
+              'Migration History'
+            ]
+          },
+          {
+            title: 'Deployment Guide',
+            sections: [
+              'AWS Account Setup',
+              'Infrastructure as Code (CloudFormation/CDK)',
+              'Environment Configuration',
+              'Secrets Management',
+              'Monitoring Setup'
+            ]
+          }
+        ],
+        
+        user: [
+          {
+            title: 'User Guide',
+            sections: [
+              'Getting Started',
+              'Dashboard Navigation',
+              'Managing Hotel Data',
+              'Working with Opportunities',
+              'Generating Reports'
+            ]
+          },
+          {
+            title: 'Admin Guide',
+            sections: [
+              'User Management',
+              'System Configuration',
+              'Data Import/Export',
+              'Performance Tuning'
+            ]
+          }
+        ]
+      }
+    },
+    
+    businessModel: {
+      title: 'Business Model',
+      icon: <Users className="w-6 h-6" />,
+      content: {
+        targetCustomers: [
+          'Elevator service and modernization companies',
+          'Building maintenance contractors',
+          'Elevator equipment manufacturers',
+          'Property management companies'
+        ],
+        
+        valueProposition: [
+          'Qualified leads with detailed intelligence',
+          'Reduced prospecting time by 80%',
+          'Data-driven sales prioritization',
+          'Competitive advantage through market insights'
+        ],
+        
+        pricingModel: {
+          tiers: [
+            {
+              name: 'Starter',
+              price: '$299/month',
+              features: [
+                'Up to 100 hotel analyses per month',
+                'Basic opportunity scoring',
+                'Email support'
+              ]
+            },
+            {
+              name: 'Professional',
+              price: '$799/month',
+              features: [
+                'Up to 500 hotel analyses per month',
+                'Advanced analytics and reporting',
+                'Priority support',
+                'API access'
+              ]
+            },
+            {
+              name: 'Enterprise',
+              price: 'Custom',
+              features: [
+                'Unlimited analyses',
+                'Custom integrations',
+                'Dedicated account manager',
+                'White-label options'
+              ]
+            }
+          ]
+        },
+        
+        revenueStreams: [
+          'SaaS subscription fees',
+          'Per-lead pricing for qualified opportunities',
+          'API usage fees for high-volume customers',
+          'Consulting services for custom implementations'
+        ]
+      }
+    }
+  };
 
-            return (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto">
-                    <div className="relative top-0 mx-auto max-w-6xl my-8 bg-white rounded-lg shadow-xl">
-                        <div className="p-6">
-                            <div className="flex justify-between items-start mb-6">
-                                <h2 className="text-2xl font-bold text-gray-800">{property?.name}</h2>
-                                <button 
-                                    onClick={onClose}
-                                    className="text-gray-500 hover:text-gray-700"
-                                >
-                                    <i className="fas fa-times"></i>
-                                </button>
-                            </div>
+  const NavButton = ({ section, icon, title, isActive }) => (
+    <button
+      onClick={() => setActiveSection(section)}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+        isActive 
+          ? 'bg-blue-600 text-white shadow-lg' 
+          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+      }`}
+    >
+      {icon}
+      <span className="font-medium">{title}</span>
+    </button>
+  );
 
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-4">Property Information</h3>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <InfoCard label="Address" value={property?.address} />
-                                        <InfoCard label="Year Built" value={property?.year_built} />
-                                        <InfoCard label="Elevator Count" value={property?.elevator_count} />
-                                        <InfoCard label="Last Renovation" value={property?.last_renovation_date || 'N/A'} />
-                                    </div>
-                                </div>
+  const renderContent = () => {
+    const section = projectStructure[activeSection];
+    if (!section) return null;
 
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-4">Analytics</h3>
-                                    <PropertyAnalytics data={analytics} />
-                                </div>
-                            </div>
-
-                            <div className="mt-6">
-                                <h3 className="text-lg font-semibold mb-4">Maintenance History</h3>
-                                <MaintenanceTimeline history={property?.maintenance_history} />
-                            </div>
-
-                            <div className="mt-6">
-                                <h3 className="text-lg font-semibold mb-4">Customer Reviews</h3>
-                                <ReviewsAnalysis reviews={property?.reviews} />
-                            </div>
-                        </div>
-                    </div>
+    return (
+      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700">
+          {section.icon}
+          <h2 className="text-2xl font-bold text-white">{section.title}</h2>
+        </div>
+        
+        <div className="space-y-6">
+          {activeSection === 'overview' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-blue-400 mb-2">Project: {section.content.projectName}</h3>
+                <p className="text-gray-400 italic mb-4">{section.content.tagline}</p>
+                <p className="text-gray-300">{section.content.description}</p>
+              </div>
+              
+              <div>
+                <h4 className="text-md font-semibold text-blue-400 mb-2">Tech Stack</h4>
+                <div className="flex flex-wrap gap-2">
+                  {section.content.techStack.map((tech, idx) => (
+                    <span key={idx} className="px-3 py-1 bg-blue-600/20 text-blue-300 rounded-full text-sm border border-blue-600/30">
+                      {tech}
+                    </span>
+                  ))}
                 </div>
-            );
-        };
+              </div>
+              
+              <div>
+                <h4 className="text-md font-semibold text-blue-400 mb-2">Core Features</h4>
+                <ul className="space-y-2">
+                  {section.content.coreFeatures.map((feature, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-gray-300">
+                      <span className="text-green-400 mt-1">✓</span>
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          {activeSection !== 'overview' && (
+            <div className="text-gray-300">
+              <pre className="bg-gray-900 p-4 rounded-lg overflow-auto text-sm">
+                {JSON.stringify(section.content, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
-        // Main App Component
-        const App = () => {
-            const [realTimeData, setRealTimeData] = useState({
-                activeUsers: 0,
-                cpuUsage: 0,
-                memoryUsage: 0,
-                apiLatency: 0
-            });
-            const [properties, setProperties] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [selectedProperty, setSelectedProperty] = useState(null);
-            const [filters, setFilters] = useState({});
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <Zap className="w-10 h-10 text-blue-400" />
+            <h1 className="text-4xl font-bold text-white">SmartLift UI</h1>
+          </div>
+          <p className="text-xl text-blue-400 mb-2">Complete Project Template</p>
+          <p className="text-gray-400 max-w-3xl mx-auto">
+            Intelligent Hotel Lead Management & Elevator Service Intelligence Platform
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-green-600/20 border border-green-600/30 rounded-lg">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-green-400 text-sm font-medium">In Development</span>
+          </div>
+        </div>
 
-            useEffect(() => {
-                loadProperties();
-                const interval = setInterval(updateRealTimeData, 3000);
-                return () => clearInterval(interval);
-            }, [filters]);
+        {/* Main Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sidebar Navigation */}
+          <div className="lg:col-span-1 space-y-2">
+            <NavButton 
+              section="overview" 
+              icon={<Zap className="w-5 h-5" />} 
+              title="Overview" 
+              isActive={activeSection === 'overview'} 
+            />
+            <NavButton 
+              section="architecture" 
+              icon={<Database className="w-5 h-5" />} 
+              title="Architecture" 
+              isActive={activeSection === 'architecture'} 
+            />
+            <NavButton 
+              section="dataModel" 
+              icon={<Database className="w-5 h-5" />} 
+              title="Data Models" 
+              isActive={activeSection === 'dataModel'} 
+            />
+            <NavButton 
+              section="codeBase" 
+              icon={<Code className="w-5 h-5" />} 
+              title="Code Structure" 
+              isActive={activeSection === 'codeBase'} 
+            />
+            <NavButton 
+              section="uiDesign" 
+              icon={<Palette className="w-5 h-5" />} 
+              title="UI/UX Design" 
+              isActive={activeSection === 'uiDesign'} 
+            />
+            <NavButton 
+              section="features" 
+              icon={<Settings className="w-5 h-5" />} 
+              title="Features" 
+              isActive={activeSection === 'features'} 
+            />
+            <NavButton 
+              section="deployment" 
+              icon={<Cloud className="w-5 h-5" />} 
+              title="Deployment" 
+              isActive={activeSection === 'deployment'} 
+            />
+            <NavButton 
+              section="documentation" 
+              icon={<FileText className="w-5 h-5" />} 
+              title="Documentation" 
+              isActive={activeSection === 'documentation'} 
+            />
+            <NavButton 
+              section="businessModel" 
+              icon={<Users className="w-5 h-5" />} 
+              title="Business Model" 
+              isActive={activeSection === 'businessModel'} 
+            />
+          </div>
 
-            const loadProperties = async () => {
-                try {
-                    setLoading(true);
-                    // Temporary mock data until API is connected
-                    setTimeout(() => {
-                        const mockData = [
-                            {
-                                id: 1,
-                                name: 'Sample Hotel',
-                                address: '*** Main St, Austin, TX',
-                                elevator_count: 4,
-                                year_built: 1995,
-                                elevator_mentions: 3,
-                                opportunity_score: 85
-                            },
-                            {
-                                id: 2,
-                                name: 'Luxury Suites',
-                                address: '*** Elm St, Dallas, TX',
-                                elevator_count: 6,
-                                year_built: 2005,
-                                elevator_mentions: 1,
-                                opportunity_score: 65
-                            },
-                            {
-                                id: 3,
-                                name: 'Budget Inn',
-                                address: '*** Oak St, Houston, TX',
-                                elevator_count: 2,
-                                year_built: 1980,
-                                elevator_mentions: 5,
-                                opportunity_score: 95
-                            }
-                        ];
-                        setProperties(mockData);
-                        setLoading(false);
-                    }, 1000);
-                } catch (error) {
-                    console.error('Failed to load properties:', error);
-                    setLoading(false);
-                }
-            };
+          {/* Content Area */}
+          <div className="lg:col-span-3">
+            {renderContent()}
+          </div>
+        </div>
 
-            const updateRealTimeData = () => {
-                setRealTimeData({
-                    activeUsers: Math.floor(Math.random() * 100),
-                    cpuUsage: Math.floor(Math.random() * 100),
-                    memoryUsage: Math.floor(Math.random() * 100),
-                    apiLatency: Math.floor(Math.random() * 1000)
-                });
-            };
+        {/* Quick Actions Footer */}
+        <div className="mt-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <button className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+              Export Full Template
+            </button>
+            <button className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors">
+              View GitHub Repo
+            </button>
+            <button className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+              Start Development
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-            return (
-                <div className="min-h-screen bg-gray-100">
-                    <NavBar />
-                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                            <MetricCard title="Active Users" value={realTimeData.activeUsers} icon="fas fa-users" />
-                            <MetricCard title="CPU Usage" value={`${realTimeData.cpuUsage}%`} icon="fas fa-microchip" />
-                            <MetricCard title="Memory Usage" value={`${realTimeData.memoryUsage}%`} icon="fas fa-memory" />
-                            <MetricCard title="API Latency" value={`${realTimeData.apiLatency}ms`} icon="fas fa-tachometer-alt" />
-                        </div>
-
-                        <PropertyFilters onFilterChange={setFilters} />
-                        
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {loading ? (
-                                <div className="col-span-3 flex justify-center items-center h-64">
-                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                                </div>
-                            ) : (
-                                <>
-                                    {properties.map(property => (
-                                        <div 
-                                            key={property.id}
-                                            onClick={() => setSelectedProperty(property.id)}
-                                            className="cursor-pointer"
-                                        >
-                                            <PropertyCard property={property} />
-                                        </div>
-                                    ))}
-                                </>
-                            )}
-                        </div>
-
-                        {selectedProperty && (
-                            <PropertyDetail 
-                                propertyId={selectedProperty}
-                                onClose={() => setSelectedProperty(null)}
-                            />
-                        )}
-                    </main>
-                </div>
-            );
-        };
-
-        // Render the app
-        ReactDOM.render(
-            <React.StrictMode>
-                <App />
-            </React.StrictMode>,
-            document.getElementById('root')
-        );
-    </script>
-</body>
-</html>
+export default SmartLiftUI;
