@@ -1,602 +1,232 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Zap, Database, Code, Palette, FileText, Settings, Cloud, Users } from 'lucide-react';
+import { Zap, Database, Code, Settings, DollarSign } from 'lucide-react';
 
 const SmartLiftUI = () => {
   const [activeSection, setActiveSection] = useState('overview');
-  const [expandedItems, setExpandedItems] = useState({});
 
-  const toggleItem = (item) => {
-    setExpandedItems(prev => ({
-      ...prev,
-      [item]: !prev[item]
-    }));
-  };
-
-  const projectStructure = {
+  const sections = {
     overview: {
       title: 'SmartLift UI Overview',
       icon: <Zap className="w-6 h-6" />,
-      content: {
-        projectName: 'SmartLift UI',
-        tagline: 'Intelligent Hotel Lead Management & Elevator Intelligence Platform',
-        description: 'AWS-powered platform for analyzing hotel reviews, identifying elevator service opportunities, and generating qualified leads for elevator service companies.',
-        techStack: ['AWS Lambda', 'Aurora Serverless', 'Google Places API', 'AWS Comprehend', 'React', 'Python'],
-        status: 'In Development',
-        coreFeatures: [
-          'Hotel data scraping and enrichment',
-          'Elevator-specific review sentiment analysis',
-          'AI-powered service opportunity identification',
-          'Lead scoring and prioritization',
-          'Competitor proximity analysis',
-          'Building characteristics estimation'
-        ]
-      }
+      content: (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-2">Project: SmartLift UI</h3>
+            <p className="text-gray-400 italic mb-4">Intelligent Hotel Lead Management & Elevator Intelligence Platform</p>
+            <p className="text-gray-300 mb-6">AWS-powered platform for analyzing hotel reviews, identifying elevator service opportunities, and generating qualified leads for elevator service companies.</p>
+          </div>
+          
+          <div>
+            <h4 className="text-md font-semibold text-blue-400 mb-2">Tech Stack</h4>
+            <div className="flex flex-wrap gap-2">
+              {['AWS Lambda', 'Aurora Serverless', 'Google Places API', 'AWS Comprehend', 'React', 'Python'].map((tech) => (
+                <span key={tech} className="px-3 py-1 bg-blue-600/20 text-blue-300 rounded-full text-sm border border-blue-600/30">
+                  {tech}
+                </span>
+              ))}
+            </div>
+          </div>
+          
+          <div>
+            <h4 className="text-md font-semibold text-blue-400 mb-2">Core Features</h4>
+            <ul className="space-y-2">
+              {[
+                'Hotel data scraping and enrichment',
+                'Elevator-specific review sentiment analysis',
+                'AI-powered service opportunity identification',
+                'Lead scoring and prioritization',
+                'Competitor proximity analysis',
+                'Building characteristics estimation'
+              ].map((feature) => (
+                <li key={feature} className="flex items-start gap-2 text-gray-300">
+                  <span className="text-green-400 mt-1">✓</span>
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )
     },
-    
     architecture: {
       title: 'System Architecture',
       icon: <Database className="w-6 h-6" />,
-      content: {
-        backend: {
-          title: 'Backend Infrastructure',
-          components: [
-            {
-              name: 'AWS Lambda Functions',
-              purpose: 'Serverless compute for hotel intelligence analysis',
-              file: 'lambda_function.py',
-              features: [
-                'Hotel data retrieval from Google Places API',
-                'Review sentiment analysis using AWS Comprehend',
-                'Elevator mention extraction and categorization',
-                'Building characteristic estimation',
-                'Service opportunity identification',
-                'Database operations via RDS Data API'
-              ]
-            },
-            {
-              name: 'Aurora Serverless (PostgreSQL)',
-              purpose: 'Scalable database for hotel and intelligence data',
-              tables: [
-                'hotels - Core hotel information',
-                'elevator_intelligence - Analysis results and insights',
-                'service_opportunities - Identified sales leads',
-                'review_analysis - Detailed review sentiment data'
-              ]
-            },
-            {
-              name: 'AWS Comprehend',
-              purpose: 'NLP service for sentiment analysis',
-              usage: 'Analyzing elevator-related review content for sentiment and issues'
-            }
-          ]
-        },
-        
-        frontend: {
-          title: 'Frontend Application',
-          framework: 'React with Tailwind CSS',
-          components: [
-            'Dashboard - Overview of leads and opportunities',
-            'Hotel List - Searchable/filterable hotel database',
-            'Intelligence View - Detailed elevator analysis per hotel',
-            'Lead Management - Prioritized service opportunities',
-            'Analytics - Metrics and performance tracking'
-          ]
-        },
-        
-        integrations: {
-          title: 'External Integrations',
-          services: [
-            'Google Places API - Hotel data and reviews',
-            'AWS Secrets Manager - API key management',
-            'CloudWatch - Logging and monitoring'
-          ]
-        }
-      }
+      content: (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Backend Infrastructure</h3>
+            <div className="bg-gray-900 rounded-lg p-4 mb-4">
+              <h4 className="text-green-400 font-semibold mb-2">AWS Lambda Functions</h4>
+              <p className="text-gray-300 text-sm mb-2">Serverless compute for hotel intelligence analysis</p>
+              <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                <li>• Hotel data retrieval from Google Places API</li>
+                <li>• Review sentiment analysis using AWS Comprehend</li>
+                <li>• Elevator mention extraction and categorization</li>
+                <li>• Building characteristic estimation</li>
+              </ul>
+            </div>
+            
+            <div className="bg-gray-900 rounded-lg p-4">
+              <h4 className="text-green-400 font-semibold mb-2">Aurora Serverless PostgreSQL</h4>
+              <p className="text-gray-300 text-sm mb-2">Scalable database for hotel and intelligence data</p>
+              <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                <li>• hotels - Core hotel information</li>
+                <li>• elevator_intelligence - Analysis results</li>
+                <li>• service_opportunities - Sales leads</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Frontend Application</h3>
+            <div className="bg-gray-900 rounded-lg p-4">
+              <p className="text-gray-300 text-sm mb-2"><strong>Framework:</strong> React with Tailwind CSS</p>
+              <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                <li>• Dashboard - Overview of opportunities</li>
+                <li>• Hotel List - Searchable database</li>
+                <li>• Intelligence View - Detailed analysis</li>
+                <li>• Lead Management - Prioritized opportunities</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )
     },
-    
     dataModel: {
       title: 'Data Models & Schema',
       icon: <Database className="w-6 h-6" />,
-      content: {
-        hotels: {
-          table: 'hotels',
-          fields: {
-            id: 'SERIAL PRIMARY KEY',
-            name: 'VARCHAR(255)',
-            city: 'VARCHAR(100)',
-            state: 'VARCHAR(50)',
-            address: 'VARCHAR(500)',
-            google_place_id: 'VARCHAR(255) UNIQUE',
-            rating: 'DECIMAL(2,1)',
-            total_reviews: 'INTEGER',
-            created_at: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-          }
-        },
-        
-        elevator_intelligence: {
-          table: 'elevator_intelligence',
-          fields: {
-            id: 'SERIAL PRIMARY KEY',
-            hotel_id: 'INTEGER REFERENCES hotels(id)',
-            hotel_name: 'VARCHAR(255)',
-            estimated_floors: 'INTEGER',
-            estimated_elevators: 'INTEGER',
-            building_age_category: 'VARCHAR(50)',
-            modernization_priority: 'VARCHAR(20)',
-            elevator_reputation_score: 'DECIMAL(3,1)',
-            total_elevator_mentions: 'INTEGER',
-            common_issues: 'JSONB',
-            service_opportunities: 'JSONB',
-            service_urgency: 'VARCHAR(20)',
-            competitor_analysis: 'JSONB',
-            analysis_date: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-          }
-        }
-      }
+      content: (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Database Schema</h3>
+            <div className="bg-gray-900 rounded-lg p-4 mb-6">
+              <h4 className="text-green-400 font-semibold mb-3">Hotels Table</h4>
+              <div className="space-y-1 text-sm text-gray-300">
+                <div className="flex gap-4"><span className="text-blue-400 w-48">id</span><span className="text-gray-400">SERIAL PRIMARY KEY</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">name</span><span className="text-gray-400">VARCHAR(255)</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">city</span><span className="text-gray-400">VARCHAR(100)</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">state</span><span className="text-gray-400">VARCHAR(50)</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">google_place_id</span><span className="text-gray-400">VARCHAR(255) UNIQUE</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">rating</span><span className="text-gray-400">DECIMAL(2,1)</span></div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-900 rounded-lg p-4">
+              <h4 className="text-green-400 font-semibold mb-3">Elevator Intelligence Table</h4>
+              <div className="space-y-1 text-sm text-gray-300">
+                <div className="flex gap-4"><span className="text-blue-400 w-48">hotel_id</span><span className="text-gray-400">INTEGER REFERENCES hotels</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">estimated_floors</span><span className="text-gray-400">INTEGER</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">estimated_elevators</span><span className="text-gray-400">INTEGER</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">reputation_score</span><span className="text-gray-400">DECIMAL(3,1)</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">common_issues</span><span className="text-gray-400">JSONB</span></div>
+                <div className="flex gap-4"><span className="text-blue-400 w-48">service_urgency</span><span className="text-gray-400">VARCHAR(20)</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )
     },
-    
-    codeBase: {
-      title: 'Code Structure',
-      icon: <Code className="w-6 h-6" />,
-      content: {
-        lambda: {
-          title: 'Lambda Function (Python)',
-          mainFile: 'lambda_function.py',
-          functions: [
-            {
-              name: 'enhance_hotel_intelligence',
-              purpose: 'Main handler - orchestrates the analysis pipeline',
-              parameters: 'event, context',
-              returns: 'Analysis results with status and metrics'
-            },
-            {
-              name: 'get_enhanced_hotel_details',
-              purpose: 'Fetch hotel data from Google Places API',
-              parameters: 'place_id, api_key',
-              returns: 'Hotel details including reviews'
-            },
-            {
-              name: 'analyze_elevator_reviews',
-              purpose: 'Extract and analyze elevator mentions',
-              parameters: 'reviews, comprehend_client',
-              returns: 'Sentiment analysis and issue categorization'
-            },
-            {
-              name: 'estimate_building_characteristics',
-              purpose: 'Estimate building specs from hotel data',
-              parameters: 'hotel_details, address',
-              returns: 'Building profile (floors, elevators, age)'
-            },
-            {
-              name: 'identify_service_opportunities',
-              purpose: 'Generate qualified service leads',
-              parameters: 'elevator_analysis, building_analysis',
-              returns: 'Prioritized opportunity list'
-            },
-            {
-              name: 'store_elevator_intelligence',
-              purpose: 'Persist analysis to database',
-              parameters: 'rds_data, cluster_arn, secret_arn, database_name, intelligence_data',
-              returns: 'Success confirmation'
-            }
-          ]
-        },
-        
-        frontend: {
-          title: 'React Components',
-          structure: {
-            'src/': {
-              'components/': [
-                'Dashboard.jsx - Main dashboard view',
-                'HotelList.jsx - Hotel data table with filters',
-                'HotelDetails.jsx - Individual hotel intelligence view',
-                'OpportunityCard.jsx - Service opportunity display',
-                'AnalyticsChart.jsx - Data visualization',
-                'SearchBar.jsx - Global search functionality'
-              ],
-              'pages/': [
-                'Home.jsx - Landing page',
-                'Hotels.jsx - Hotel management page',
-                'Opportunities.jsx - Lead management page',
-                'Analytics.jsx - Reporting and metrics'
-              ],
-              'utils/': [
-                'api.js - API client for Lambda functions',
-                'dataProcessing.js - Data transformation utilities',
-                'constants.js - App-wide constants'
-              ],
-              'App.jsx': 'Main application component',
-              'index.jsx': 'Application entry point'
-            }
-          }
-        }
-      }
-    },
-    
-    uiDesign: {
-      title: 'UI/UX Design',
-      icon: <Palette className="w-6 h-6" />,
-      content: {
-        designSystem: {
-          colors: {
-            primary: '#3B82F6 (Blue)',
-            secondary: '#10B981 (Green)',
-            accent: '#F59E0B (Amber)',
-            danger: '#EF4444 (Red)',
-            background: '#1F2937 (Dark Gray)',
-            surface: '#374151 (Medium Gray)',
-            text: '#F9FAFB (Light Gray)'
-          },
-          typography: {
-            headings: 'Inter, sans-serif (Bold)',
-            body: 'Inter, sans-serif (Regular)',
-            monospace: 'Fira Code, monospace'
-          },
-          spacing: 'Tailwind default scale (4px base)',
-          borderRadius: {
-            sm: '0.375rem',
-            md: '0.5rem',
-            lg: '0.75rem',
-            xl: '1rem'
-          }
-        },
-        
-        layouts: [
-          {
-            page: 'Dashboard',
-            description: 'Overview cards with key metrics, recent opportunities, and quick actions',
-            sections: ['Metrics Grid', 'Recent Leads', 'Urgency Chart', 'Quick Actions']
-          },
-          {
-            page: 'Hotel List',
-            description: 'Searchable table with inline filters and sorting',
-            sections: ['Search/Filter Bar', 'Data Table', 'Pagination', 'Bulk Actions']
-          },
-          {
-            page: 'Hotel Intelligence',
-            description: 'Detailed view of individual hotel analysis',
-            sections: ['Hotel Header', 'Building Profile', 'Review Analysis', 'Opportunities List', 'Competitor Map']
-          },
-          {
-            page: 'Opportunities',
-            description: 'Prioritized lead management interface',
-            sections: ['Urgency Filter', 'Opportunity Cards', 'Contact Actions', 'Status Tracking']
-          }
-        ]
-      }
-    },
-    
     features: {
       title: 'Feature Specifications',
       icon: <Settings className="w-6 h-6" />,
-      content: {
-        coreFeatures: [
-          {
-            name: 'Hotel Data Scraping',
-            description: 'Automated collection of hotel information from Google Places',
-            status: 'Implemented',
-            details: [
-              'Batch processing of hotels by city/state',
-              'Automatic deduplication via google_place_id',
-              'Review collection and storage',
-              'Rating and metadata extraction'
-            ]
-          },
-          {
-            name: 'Elevator Intelligence Analysis',
-            description: 'AI-powered analysis of elevator-related content',
-            status: 'Implemented',
-            details: [
-              'Keyword-based elevator mention detection',
-              'Sentiment analysis using AWS Comprehend',
-              'Issue categorization (breakdowns, speed, noise, etc.)',
-              'Reputation scoring (0-10 scale)',
-              'Service urgency calculation'
-            ]
-          },
-          {
-            name: 'Building Estimation',
-            description: 'Intelligent estimation of building characteristics',
-            status: 'Implemented',
-            details: [
-              'Floor count estimation from hotel name/type',
-              'Elevator count prediction',
-              'Building age categorization',
-              'Modernization priority assessment'
-            ]
-          },
-          {
-            name: 'Service Opportunity Generation',
-            description: 'Automated lead qualification and prioritization',
-            status: 'Implemented',
-            details: [
-              'Multi-factor opportunity scoring',
-              'Urgency-based prioritization',
-              'Issue-specific recommendations',
-              'Potential value estimation'
-            ]
-          },
-          {
-            name: 'Dashboard Analytics',
-            description: 'Visual insights and performance metrics',
-            status: 'In Progress',
-            details: [
-              'Total hotels analyzed',
-              'Opportunities by urgency level',
-              'Top issues across market',
-              'Geographic opportunity heat map'
-            ]
-          }
-        ],
-        
-        upcomingFeatures: [
-          'Email automation for lead outreach',
-          'CRM integration (Salesforce, HubSpot)',
-          'Competitive pricing intelligence',
-          'Maintenance contract expiration tracking',
-          'Mobile app for field sales teams',
-          'Custom report generation'
-        ]
-      }
-    },
-    
-    deployment: {
-      title: 'Deployment & DevOps',
-      icon: <Cloud className="w-6 h-6" />,
-      content: {
-        awsServices: [
-          {
-            service: 'AWS Lambda',
-            configuration: {
-              runtime: 'Python 3.11',
-              timeout: '5 minutes',
-              memory: '512 MB',
-              triggers: 'EventBridge scheduled rules, API Gateway'
-            }
-          },
-          {
-            service: 'Aurora Serverless v2',
-            configuration: {
-              engine: 'PostgreSQL 14',
-              minCapacity: '0.5 ACU',
-              maxCapacity: '2 ACU',
-              backupRetention: '7 days'
-            }
-          },
-          {
-            service: 'API Gateway',
-            configuration: {
-              type: 'REST API',
-              authentication: 'API Key + IAM',
-              throttling: '1000 requests/second'
-            }
-          },
-          {
-            service: 'CloudFront',
-            configuration: {
-              purpose: 'Frontend distribution',
-              caching: 'Optimized for React SPA',
-              ssl: 'ACM certificate'
-            }
-          }
-        ],
-        
-        cicd: {
-          tool: 'GitHub Actions',
-          pipelines: [
-            {
-              name: 'Lambda Deployment',
-              trigger: 'Push to main branch (backend/)',
-              steps: ['Test', 'Package', 'Deploy to Lambda', 'Run integration tests']
-            },
-            {
-              name: 'Frontend Deployment',
-              trigger: 'Push to main branch (frontend/)',
-              steps: ['Build React app', 'Upload to S3', 'Invalidate CloudFront cache']
-            }
-          ]
-        },
-        
-        environments: [
-          { name: 'Development', purpose: 'Feature development and testing' },
-          { name: 'Staging', purpose: 'Pre-production validation' },
-          { name: 'Production', purpose: 'Live customer-facing environment' }
-        ]
-      }
-    },
-    
-    documentation: {
-      title: 'Documentation',
-      icon: <FileText className="w-6 h-6" />,
-      content: {
-        technical: [
-          {
-            title: 'API Documentation',
-            sections: [
-              'Authentication & Authorization',
-              'Endpoint Reference',
-              'Request/Response Schemas',
-              'Error Codes',
-              'Rate Limiting',
-              'Webhooks'
-            ]
-          },
-          {
-            title: 'Database Schema',
-            sections: [
-              'Entity Relationship Diagram',
-              'Table Definitions',
-              'Indexes and Constraints',
-              'Migration History'
-            ]
-          },
-          {
-            title: 'Deployment Guide',
-            sections: [
-              'AWS Account Setup',
-              'Infrastructure as Code (CloudFormation/CDK)',
-              'Environment Configuration',
-              'Secrets Management',
-              'Monitoring Setup'
-            ]
-          }
-        ],
-        
-        user: [
-          {
-            title: 'User Guide',
-            sections: [
-              'Getting Started',
-              'Dashboard Navigation',
-              'Managing Hotel Data',
-              'Working with Opportunities',
-              'Generating Reports'
-            ]
-          },
-          {
-            title: 'Admin Guide',
-            sections: [
-              'User Management',
-              'System Configuration',
-              'Data Import/Export',
-              'Performance Tuning'
-            ]
-          }
-        ]
-      }
-    },
-    
-    businessModel: {
-      title: 'Business Model',
-      icon: <Users className="w-6 h-6" />,
-      content: {
-        targetCustomers: [
-          'Elevator service and modernization companies',
-          'Building maintenance contractors',
-          'Elevator equipment manufacturers',
-          'Property management companies'
-        ],
-        
-        valueProposition: [
-          'Qualified leads with detailed intelligence',
-          'Reduced prospecting time by 80%',
-          'Data-driven sales prioritization',
-          'Competitive advantage through market insights'
-        ],
-        
-        pricingModel: {
-          tiers: [
-            {
-              name: 'Starter',
-              price: '$299/month',
-              features: [
-                'Up to 100 hotel analyses per month',
-                'Basic opportunity scoring',
-                'Email support'
-              ]
-            },
-            {
-              name: 'Professional',
-              price: '$799/month',
-              features: [
-                'Up to 500 hotel analyses per month',
-                'Advanced analytics and reporting',
-                'Priority support',
-                'API access'
-              ]
-            },
-            {
-              name: 'Enterprise',
-              price: 'Custom',
-              features: [
-                'Unlimited analyses',
-                'Custom integrations',
-                'Dedicated account manager',
-                'White-label options'
-              ]
-            }
-          ]
-        },
-        
-        revenueStreams: [
-          'SaaS subscription fees',
-          'Per-lead pricing for qualified opportunities',
-          'API usage fees for high-volume customers',
-          'Consulting services for custom implementations'
-        ]
-      }
-    }
-  };
-
-  const NavButton = ({ section, icon, title, isActive }) => (
-    <button
-      onClick={() => setActiveSection(section)}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-        isActive 
-          ? 'bg-blue-600 text-white shadow-lg' 
-          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-      }`}
-    >
-      {icon}
-      <span className="font-medium">{title}</span>
-    </button>
-  );
-
-  const renderContent = () => {
-    const section = projectStructure[activeSection];
-    if (!section) return null;
-
-    return (
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700">
-          {section.icon}
-          <h2 className="text-2xl font-bold text-white">{section.title}</h2>
-        </div>
-        
+      content: (
         <div className="space-y-6">
-          {activeSection === 'overview' && (
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Implemented Features</h3>
             <div className="space-y-4">
-              <div>
-                <h3 className="text-lg font-semibold text-blue-400 mb-2">Project: {section.content.projectName}</h3>
-                <p className="text-gray-400 italic mb-4">{section.content.tagline}</p>
-                <p className="text-gray-300">{section.content.description}</p>
+              <div className="bg-gray-900 rounded-lg p-4 border-l-4 border-green-500">
+                <h4 className="text-green-400 font-semibold mb-2">Hotel Data Scraping</h4>
+                <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                  <li>• Batch processing by city and state</li>
+                  <li>• Automatic deduplication</li>
+                  <li>• Review collection and storage</li>
+                </ul>
               </div>
               
-              <div>
-                <h4 className="text-md font-semibold text-blue-400 mb-2">Tech Stack</h4>
-                <div className="flex flex-wrap gap-2">
-                  {section.content.techStack.map((tech, idx) => (
-                    <span key={idx} className="px-3 py-1 bg-blue-600/20 text-blue-300 rounded-full text-sm border border-blue-600/30">
-                      {tech}
-                    </span>
-                  ))}
-                </div>
+              <div className="bg-gray-900 rounded-lg p-4 border-l-4 border-green-500">
+                <h4 className="text-green-400 font-semibold mb-2">Elevator Intelligence Analysis</h4>
+                <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                  <li>• Sentiment analysis using AWS Comprehend</li>
+                  <li>• Issue categorization</li>
+                  <li>• Reputation scoring (0-10 scale)</li>
+                </ul>
               </div>
               
-              <div>
-                <h4 className="text-md font-semibold text-blue-400 mb-2">Core Features</h4>
-                <ul className="space-y-2">
-                  {section.content.coreFeatures.map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-gray-300">
-                      <span className="text-green-400 mt-1">✓</span>
-                      <span>{feature}</span>
-                    </li>
-                  ))}
+              <div className="bg-gray-900 rounded-lg p-4 border-l-4 border-green-500">
+                <h4 className="text-green-400 font-semibold mb-2">Service Opportunity Generation</h4>
+                <ul className="text-gray-400 text-sm space-y-1 ml-4">
+                  <li>• Multi-factor opportunity scoring</li>
+                  <li>• Urgency-based prioritization</li>
+                  <li>• Issue-specific recommendations</li>
                 </ul>
               </div>
             </div>
-          )}
+          </div>
           
-          {activeSection !== 'overview' && (
-            <div className="text-gray-300">
-              <pre className="bg-gray-900 p-4 rounded-lg overflow-auto text-sm">
-                {JSON.stringify(section.content, null, 2)}
-              </pre>
-            </div>
-          )}
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Upcoming Features</h3>
+            <ul className="space-y-2 text-gray-300">
+              <li className="flex items-start gap-2"><span className="text-amber-400">○</span><span>Email automation for lead outreach</span></li>
+              <li className="flex items-start gap-2"><span className="text-amber-400">○</span><span>CRM integration (Salesforce, HubSpot)</span></li>
+              <li className="flex items-start gap-2"><span className="text-amber-400">○</span><span>Mobile app for field sales teams</span></li>
+            </ul>
+          </div>
         </div>
-      </div>
-    );
+      )
+    },
+    business: {
+      title: 'Business Model',
+      icon: <DollarSign className="w-6 h-6" />,
+      content: (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Target Customers</h3>
+            <ul className="space-y-2 text-gray-300">
+              <li className="flex items-start gap-2"><span className="text-blue-400">•</span><span>Elevator service and modernization companies</span></li>
+              <li className="flex items-start gap-2"><span className="text-blue-400">•</span><span>Building maintenance contractors</span></li>
+              <li className="flex items-start gap-2"><span className="text-blue-400">•</span><span>Elevator equipment manufacturers</span></li>
+            </ul>
+          </div>
+          
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">Pricing Model</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                <h4 className="text-green-400 font-semibold mb-2">Starter</h4>
+                <p className="text-2xl font-bold text-white mb-3">$299/mo</p>
+                <ul className="text-gray-400 text-sm space-y-1">
+                  <li>✓ 100 hotel analyses</li>
+                  <li>✓ Basic opportunity scoring</li>
+                  <li>✓ Email support</li>
+                </ul>
+              </div>
+              
+              <div className="bg-gray-900 rounded-lg p-4 border-2 border-blue-500">
+                <h4 className="text-blue-400 font-semibold mb-2">Professional</h4>
+                <p className="text-2xl font-bold text-white mb-3">$799/mo</p>
+                <ul className="text-gray-400 text-sm space-y-1">
+                  <li>✓ 500 hotel analyses</li>
+                  <li>✓ Advanced analytics</li>
+                  <li>✓ Priority support</li>
+                  <li>✓ API access</li>
+                </ul>
+              </div>
+              
+              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+                <h4 className="text-purple-400 font-semibold mb-2">Enterprise</h4>
+                <p className="text-2xl font-bold text-white mb-3">Custom</p>
+                <ul className="text-gray-400 text-sm space-y-1">
+                  <li>✓ Unlimited analyses</li>
+                  <li>✓ Custom integrations</li>
+                  <li>✓ Dedicated account manager</li>
+                  <li>✓ White-label options</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    }
   };
 
   return (
@@ -610,7 +240,7 @@ const SmartLiftUI = () => {
           </div>
           <p className="text-xl text-blue-400 mb-2">Complete Project Template</p>
           <p className="text-gray-400 max-w-3xl mx-auto">
-            Intelligent Hotel Lead Management & Elevator Service Intelligence Platform
+            Intelligent Hotel Lead Management & Elevator Intelligence Platform
           </p>
           <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-green-600/20 border border-green-600/30 rounded-lg">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -620,76 +250,42 @@ const SmartLiftUI = () => {
 
         {/* Main Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Sidebar Navigation */}
+          {/* Sidebar */}
           <div className="lg:col-span-1 space-y-2">
-            <NavButton 
-              section="overview" 
-              icon={<Zap className="w-5 h-5" />} 
-              title="Overview" 
-              isActive={activeSection === 'overview'} 
-            />
-            <NavButton 
-              section="architecture" 
-              icon={<Database className="w-5 h-5" />} 
-              title="Architecture" 
-              isActive={activeSection === 'architecture'} 
-            />
-            <NavButton 
-              section="dataModel" 
-              icon={<Database className="w-5 h-5" />} 
-              title="Data Models" 
-              isActive={activeSection === 'dataModel'} 
-            />
-            <NavButton 
-              section="codeBase" 
-              icon={<Code className="w-5 h-5" />} 
-              title="Code Structure" 
-              isActive={activeSection === 'codeBase'} 
-            />
-            <NavButton 
-              section="uiDesign" 
-              icon={<Palette className="w-5 h-5" />} 
-              title="UI/UX Design" 
-              isActive={activeSection === 'uiDesign'} 
-            />
-            <NavButton 
-              section="features" 
-              icon={<Settings className="w-5 h-5" />} 
-              title="Features" 
-              isActive={activeSection === 'features'} 
-            />
-            <NavButton 
-              section="deployment" 
-              icon={<Cloud className="w-5 h-5" />} 
-              title="Deployment" 
-              isActive={activeSection === 'deployment'} 
-            />
-            <NavButton 
-              section="documentation" 
-              icon={<FileText className="w-5 h-5" />} 
-              title="Documentation" 
-              isActive={activeSection === 'documentation'} 
-            />
-            <NavButton 
-              section="businessModel" 
-              icon={<Users className="w-5 h-5" />} 
-              title="Business Model" 
-              isActive={activeSection === 'businessModel'} 
-            />
+            {Object.entries(sections).map(([key, section]) => (
+              <button
+                key={key}
+                onClick={() => setActiveSection(key)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  activeSection === key
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                {section.icon}
+                <span className="font-medium">{section.title}</span>
+              </button>
+            ))}
           </div>
 
-          {/* Content Area */}
+          {/* Content */}
           <div className="lg:col-span-3">
-            {renderContent()}
+            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700">
+                {sections[activeSection].icon}
+                <h2 className="text-2xl font-bold text-white">{sections[activeSection].title}</h2>
+              </div>
+              {sections[activeSection].content}
+            </div>
           </div>
         </div>
 
-        {/* Quick Actions Footer */}
+        {/* Footer */}
         <div className="mt-8 bg-gray-800 rounded-lg p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <button className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
-              Export Full Template
+              Export Template
             </button>
             <button className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors">
               View GitHub Repo
