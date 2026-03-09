@@ -3,15 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@aws-amplify/ui-react": "^6.13.2",
+    "@aws-amplify/ui-react-ai": "^1.5.0",
+    "amazon-cognito-identity-js": "^6.3.16",
+    "autoprefixer": "^10.4.14",
+    "aws-amplify": "^6.15.9",
+    "axios": "^1.4.0",
+    "lucide-react": "^0.263.1",
+    "postcss": "^8.4.24",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "lucide-react": "^0.263.1",
+    "react-router-dom": "^7.12.0",
+    "react-scripts": "^5.0.1",
     "recharts": "^2.5.0",
-    "axios": "^1.4.0",
-    "tailwindcss": "^3.3.0",
-    "autoprefixer": "^10.4.14",
-    "postcss": "^8.4.24"
+    "tailwindcss": "^3.3.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -35,5 +40,14 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@aws-amplify/backend": "^1.19.0",
+    "@aws-amplify/backend-cli": "^1.8.1",
+    "aws-cdk-lib": "^2.216.0",
+    "constructs": "^10.4.3",
+    "esbuild": "^0.27.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   }
 }
