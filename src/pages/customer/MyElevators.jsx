@@ -1,217 +1,120 @@
-import React, { useState } from 'react';
-import { Home, AlertCircle, CheckCircle, Clock, Wrench, Calendar, MapPin, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Home, LogOut, AlertCircle, CheckCircle, Clock, Wrench } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 
 const MyElevators = () => {
-  const [selectedElevator, setSelectedElevator] = useState(null);
+  const { user, logout } = useAuth();
+  const [elevators, setElevators] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const elevators = [
-    {
-      id: 1,
-      name: 'Main Tower - Elevator 1',
-      location: 'Building A, Floor 1-25',
-      manufacturer: 'Otis',
-      model: 'Gen2',
-      serialNumber: 'OT-2015-001',
-      installDate: '2015-06-15',
-      lastService: '2024-12-15',
-      nextService: '2025-03-15',
-      status: 'operational',
-      uptime: 99.8,
-      capacity: '3500 lbs',
-      floors: 25,
-      issues: [],
-      warranty: 'Active until 2026-06-15',
-    },
-    {
-      id: 2,
-      name: 'Main Tower - Elevator 2',
-      location: 'Building A, Floor 1-25',
-      manufacturer: 'Otis',
-      model: 'Gen2',
-      serialNumber: 'OT-2015-002',
-      installDate: '2015-06-15',
-      lastService: '2024-11-20',
-      nextService: '2025-02-20',
-      status: 'maintenance',
-      uptime: 98.2,
-      capacity: '3500 lbs',
-      floors: 25,
-      issues: ['Unusual noise reported', 'Scheduled for inspection'],
-      warranty: 'Active until 2026-06-15',
-    },
-    {
-      id: 3,
-      name: 'South Wing - Elevator 1',
-      location: 'Building B, Floor 1-15',
-      manufacturer: 'Schindler',
-      model: '3300',
-      serialNumber: 'SC-2010-001',
-      installDate: '2010-03-20',
-      lastService: '2024-10-05',
-      nextService: '2025-01-05',
-      status: 'operational',
-      uptime: 97.5,
-      capacity: '2500 lbs',
-      floors: 15,
-      issues: [],
-      warranty: 'Expired',
-    },
-  ];
+  useEffect(() => {
+    api.getElevators().then(setElevators).catch(e => setError(e.message)).finally(() => setLoading(false));
+  }, []);
 
-  const getStatusBadge = (status) => {
-    const badges = {
-      operational: { color: 'bg-green-500/20 text-green-400 border-green-500/30', icon: CheckCircle, label: 'Operational' },
-      maintenance: { color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', icon: Clock, label: 'Under Maintenance' },
-      'out-of-service': { color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: AlertCircle, label: 'Out of Service' },
-    };
-    return badges[status] || badges.operational;
+  const statusConfig = {
+    operational: { color: 'text-green-400 bg-green-500/20 border-green-500/30', icon: CheckCircle },
+    maintenance: { color: 'text-amber-400 bg-amber-500/20 border-amber-500/30', icon: Wrench },
+    out_of_service: { color: 'text-red-400 bg-red-500/20 border-red-500/30', icon: AlertCircle },
   };
 
+  if (loading) return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+      <div className="text-white text-xl">Loading...</div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <Link to="/customer/dashboard" className="text-blue-400 hover:text-blue-300 mb-4 inline-block">← Back to Dashboard</Link>
-          <h1 className="text-3xl font-bold text-white mb-2">My Elevators</h1>
-          <p className="text-gray-400">Manage and monitor all your elevators</p>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <Home className="w-8 h-8 text-green-400" />
-              <span className="text-3xl font-bold text-white">{elevators.filter(e => e.status === 'operational').length}</span>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-3">
+              <Link to="/customer/dashboard"><Home className="w-8 h-8 text-blue-400" /></Link>
+              <div>
+                <h1 className="text-xl font-bold text-white">My Elevators</h1>
+                <p className="text-xs text-gray-400">{user?.name}</p>
+              </div>
             </div>
-            <p className="text-gray-400">Operational</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <Wrench className="w-8 h-8 text-amber-400" />
-              <span className="text-3xl font-bold text-white">{elevators.filter(e => e.status === 'maintenance').length}</span>
-            </div>
-            <p className="text-gray-400">Under Maintenance</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <TrendingUp className="w-8 h-8 text-blue-400" />
-              <span className="text-3xl font-bold text-white">98.5%</span>
-            </div>
-            <p className="text-gray-400">Average Uptime</p>
+            <button onClick={logout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
+              <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* Elevators Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-white mb-2">My Elevators</h2>
+            <p className="text-gray-400">{elevators.length} elevator{elevators.length !== 1 ? 's' : ''} registered</p>
+          </div>
+          <Link to="/customer/service-request" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+            Request Service
+          </Link>
+        </div>
+
+        {error && (
+          <div className="mb-6 bg-red-500/20 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400" />
+            <p className="text-red-400">{error}</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {elevators.map((elevator) => {
-            const statusBadge = getStatusBadge(elevator.status);
+            const config = statusConfig[elevator.status] || statusConfig.operational;
+            const StatusIcon = config.icon;
             return (
-              <div key={elevator.id} className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden hover:border-blue-500 transition-colors">
-                {/* Header */}
-                <div className="bg-gray-900 p-4 border-b border-gray-700">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-xl font-bold text-white mb-1">{elevator.name}</h3>
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
-                        <MapPin className="w-4 h-4" />
-                        {elevator.location}
-                      </div>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-2 ${statusBadge.color}`}>
-                      <statusBadge.icon className="w-4 h-4" />
-                      {statusBadge.label}
-                    </span>
+              <div key={elevator.id} className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-1">{elevator.elevator_identifier}</h3>
+                    <p className="text-sm text-gray-400">{elevator.manufacturer} {elevator.model}</p>
                   </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${config.color}`}>
+                    <StatusIcon className="w-3 h-3" />
+                    {elevator.status?.replace('_', ' ').toUpperCase()}
+                  </span>
                 </div>
-
-                {/* Details */}
-                <div className="p-6">
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Manufacturer</p>
-                      <p className="text-white font-semibold">{elevator.manufacturer} {elevator.model}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Capacity</p>
-                      <p className="text-white font-semibold">{elevator.capacity}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Floors Served</p>
-                      <p className="text-white font-semibold">{elevator.floors} floors</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Uptime</p>
-                      <p className="text-green-400 font-semibold">{elevator.uptime}%</p>
-                    </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Capacity</span>
+                    <span className="text-white">{elevator.capacity_lbs} lbs</span>
                   </div>
-
-                  {/* Service Info */}
-                  <div className="bg-gray-900 rounded-lg p-4 mb-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Calendar className="w-5 h-5 text-blue-400" />
-                      <h4 className="text-white font-semibold">Service Schedule</h4>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Last Service:</span>
-                        <span className="text-white">{new Date(elevator.lastService).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Next Service:</span>
-                        <span className="text-blue-400 font-semibold">{new Date(elevator.nextService).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Warranty:</span>
-                        <span className={elevator.warranty.includes('Active') ? 'text-green-400' : 'text-red-400'}>
-                          {elevator.warranty}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Floors Served</span>
+                    <span className="text-white">{elevator.floors_served}</span>
                   </div>
-
-                  {/* Issues */}
-                  {elevator.issues.length > 0 && (
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle className="w-5 h-5 text-amber-400" />
-                        <h4 className="text-amber-400 font-semibold">Active Issues</h4>
-                      </div>
-                      <ul className="space-y-1 text-sm">
-                        {elevator.issues.map((issue, idx) => (
-                          <li key={idx} className="text-amber-300">• {issue}</li>
-                        ))}
-                      </ul>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Install Date</span>
+                    <span className="text-white">{elevator.install_date ? new Date(elevator.install_date).getFullYear() : 'N/A'}</span>
+                  </div>
+                  {elevator.serial_number && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Serial #</span>
+                      <span className="text-white">{elevator.serial_number}</span>
                     </div>
                   )}
-
-                  {/* Actions */}
-                  <div className="flex gap-3">
-                    <Link to={`/customer/service-request?elevator=${elevator.id}`} 
-                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-center rounded-lg font-medium transition-colors">
-                      Request Service
-                    </Link>
-                    <Link to={`/customer/maintenance?elevator=${elevator.id}`}
-                      className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white text-center rounded-lg font-medium transition-colors">
-                      View History
-                    </Link>
-                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                  <Link to="/customer/service-request" className="w-full block text-center py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded-lg text-sm font-medium transition-colors border border-blue-600/30">
+                    Request Service
+                  </Link>
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Add Elevator Button */}
-        <div className="mt-8 bg-gray-800 rounded-lg p-8 border border-dashed border-gray-600 text-center">
-          <Home className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-white mb-2">Add New Elevator</h3>
-          <p className="text-gray-400 mb-4">Register a new elevator to start tracking service and maintenance</p>
-          <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
-            + Add Elevator
-          </button>
-        </div>
+        {elevators.length === 0 && !loading && (
+          <div className="text-center py-16">
+            <Home className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-400 text-xl">No elevators found</p>
+          </div>
+        )}
       </div>
     </div>
   );
