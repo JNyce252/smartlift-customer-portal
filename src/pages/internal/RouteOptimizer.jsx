@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, MapPin, LogOut, Navigation, Plus, X, Clock, Route, ChevronUp, ChevronDown, Star } from 'lucide-react';
+import { Building2, MapPin, LogOut, Navigation, Plus, X, Clock, Map, ChevronUp, ChevronDown, Star } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
@@ -173,7 +173,7 @@ const RouteOptimizer = () => {
           {/* Stops */}
           <div className="p-4 border-b border-gray-700">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-white font-medium flex items-center gap-2"><Route className="w-4 h-4 text-purple-400" />Stops ({stops.length})</h3>
+              <h3 className="text-white font-medium flex items-center gap-2"><Map className="w-4 h-4 text-purple-400" />Stops ({stops.length})</h3>
               {stops.length >= 2 && (
                 <button onClick={calculateRoute} disabled={calculating}
                   className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-1.5">
