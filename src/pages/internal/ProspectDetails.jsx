@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Mail, Star, LogOut, AlertCircle, Brain, TrendingUp, Wrench, CheckCircle, Clock } from 'lucide-react';
+import { Building2, MapPin, Phone, Mail, Star, LogOut, Brain, TrendingUp, Wrench, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { api } from '../../services/api';
 
 const ProspectDetails = () => {
   const { id } = useParams();
@@ -12,9 +11,7 @@ const ProspectDetails = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(`${process.env.REACT_APP_API_BASE_URL}/prospects/${id}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
-    })
+    fetch(`${process.env.REACT_APP_API_BASE_URL}/prospects/${id}`)
       .then(r => r.json())
       .then(setProspect)
       .catch(e => setError(e.message))
@@ -65,7 +62,6 @@ const ProspectDetails = () => {
           ← Back to Leads
         </Link>
 
-        {/* Header Card */}
         <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 mb-6">
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-start gap-6">
@@ -76,24 +72,24 @@ const ProspectDetails = () => {
                 <h2 className="text-3xl font-bold text-white mb-2">{prospect.name}</h2>
                 <div className="flex items-center gap-2 text-gray-400 mb-2">
                   <MapPin className="w-4 h-4" />
-                  {prospect.address || `${prospect.city}, ${prospect.state}`}
+                  {prospect.address || prospect.city + ', ' + prospect.state}
                 </div>
                 {prospect.rating && (
                   <div className="flex items-center gap-2 mb-2">
                     <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
                     <span className="text-white font-semibold">{prospect.rating}</span>
-                    <span className="text-gray-400">({prospect.total_reviews?.toLocaleString()} reviews)</span>
+                    <span className="text-gray-400">({Number(prospect.total_reviews).toLocaleString()} reviews)</span>
                   </div>
                 )}
                 <div className="flex gap-2 flex-wrap mt-3">
                   <span className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm border border-blue-500/30">{prospect.type}</span>
-                  <span className={`px-3 py-1 rounded-full text-sm border ${urgencyColors[prospect.service_urgency] || urgencyColors.low}`}>
-                    {prospect.service_urgency?.toUpperCase()} URGENCY
-                  </span>
-                  {prospect.modernization_candidate && (
-                    <span className="px-3 py-1 bg-amber-500/20 text-amber-400 rounded-full text-sm border border-amber-500/30">
-                      Modernization Candidate
+                  {prospect.service_urgency && (
+                    <span className={'px-3 py-1 rounded-full text-sm border ' + (urgencyColors[prospect.service_urgency] || urgencyColors.low)}>
+                      {prospect.service_urgency.toUpperCase()} URGENCY
                     </span>
+                  )}
+                  {prospect.modernization_candidate && (
+                    <span className="px-3 py-1 bg-amber-500/20 text-amber-400 rounded-full text-sm border border-amber-500/30">Modernization Candidate</span>
                   )}
                 </div>
               </div>
@@ -103,10 +99,9 @@ const ProspectDetails = () => {
               <p className="text-6xl font-bold text-purple-400">{prospect.lead_score}</p>
             </div>
           </div>
-
           <div className="flex gap-3">
             {prospect.phone && (
-              <a href={`tel:${prospect.phone}`} className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center gap-2">
+              <a href={'tel:' + prospect.phone} className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium flex items-center gap-2">
                 <Phone className="w-5 h-5" />Call Now
               </a>
             )}
@@ -119,7 +114,6 @@ const ProspectDetails = () => {
           </div>
         </div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <Building2 className="w-6 h-6 text-purple-400 mb-3" />
@@ -134,7 +128,7 @@ const ProspectDetails = () => {
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <Clock className="w-6 h-6 text-amber-400 mb-3" />
             <p className="text-gray-400 text-sm mb-1">Building Age</p>
-            <p className="text-3xl font-bold text-white">{prospect.building_age ? `${prospect.building_age}yr` : 'N/A'}</p>
+            <p className="text-3xl font-bold text-white">{prospect.building_age ? prospect.building_age + 'yr' : 'N/A'}</p>
           </div>
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <TrendingUp className="w-6 h-6 text-green-400 mb-3" />
@@ -144,7 +138,6 @@ const ProspectDetails = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* AI Analysis */}
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <div className="flex items-center gap-3 mb-4">
               <div className="bg-purple-600/20 rounded-lg p-2"><Brain className="w-6 h-6 text-purple-400" /></div>
@@ -159,35 +152,31 @@ const ProspectDetails = () => {
                 </div>
               </>
             ) : (
-              <p className="text-gray-500">AI analysis not yet available for this prospect.</p>
+              <p className="text-gray-500">AI analysis not yet available.</p>
             )}
           </div>
 
-          {/* Scores */}
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <h3 className="text-xl font-bold text-white mb-4">Intelligence Scores</h3>
             <div className="space-y-4">
               {[
                 { label: 'Lead Score', value: prospect.lead_score, max: 100, color: 'purple' },
-                { label: 'Sentiment Score', value: prospect.sentiment_score ? parseFloat(prospect.sentiment_score) * 10 : null, max: 100, color: 'blue', display: prospect.sentiment_score },
-                { label: 'Reputation Score', value: prospect.reputation_score ? parseFloat(prospect.reputation_score) * 10 : null, max: 100, color: 'green', display: prospect.reputation_score },
+                { label: 'Sentiment Score', value: prospect.sentiment_score ? parseFloat(prospect.sentiment_score) * 10 : null, display: prospect.sentiment_score, color: 'blue' },
+                { label: 'Reputation Score', value: prospect.reputation_score ? parseFloat(prospect.reputation_score) * 10 : null, display: prospect.reputation_score, color: 'green' },
               ].map(({ label, value, color, display }) => (
                 <div key={label}>
                   <div className="flex justify-between mb-1">
                     <span className="text-gray-400 text-sm">{label}</span>
-                    <span className="text-white font-semibold">{display || value || 'N/A'}</span>
+                    <span className="text-white font-semibold">{display !== undefined ? display : value || 'N/A'}</span>
                   </div>
                   <div className="w-full bg-gray-700 rounded-full h-2">
-                    <div className={`h-2 rounded-full bg-gradient-to-r ${
-                      color === 'purple' ? 'from-purple-600 to-purple-400' :
-                      color === 'blue' ? 'from-blue-600 to-blue-400' : 'from-green-600 to-green-400'
-                    }`} style={{ width: `${value || 0}%` }} />
+                    <div className={'h-2 rounded-full bg-gradient-to-r ' + (color === 'purple' ? 'from-purple-600 to-purple-400' : color === 'blue' ? 'from-blue-600 to-blue-400' : 'from-green-600 to-green-400')}
+                      style={{ width: (value || 0) + '%' }} />
                   </div>
                 </div>
               ))}
             </div>
-
-            {prospect.common_issues?.length > 0 && (
+            {prospect.common_issues && prospect.common_issues.length > 0 && (
               <div className="mt-6">
                 <p className="text-gray-400 text-sm font-semibold mb-3">Common Issues</p>
                 <div className="flex flex-wrap gap-2">
@@ -202,9 +191,8 @@ const ProspectDetails = () => {
           </div>
         </div>
 
-        {/* Contact & Status */}
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-xl font-bold text-white mb-4">Contact & Status</h3>
+          <h3 className="text-xl font-bold text-white mb-4">Contact and Status</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <p className="text-gray-400 text-sm mb-1">Phone</p>
@@ -216,11 +204,9 @@ const ProspectDetails = () => {
             </div>
             <div>
               <p className="text-gray-400 text-sm mb-1">Status</p>
-              <span className={`px-3 py-1 rounded-full text-sm border ${
-                prospect.status === 'new' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                prospect.status === 'contacted' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                'bg-green-500/20 text-green-400 border-green-500/30'
-              }`}>{prospect.status?.toUpperCase()}</span>
+              <span className={'px-3 py-1 rounded-full text-sm border ' + (prospect.status === 'new' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : prospect.status === 'contacted' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-green-500/20 text-green-400 border-green-500/30')}>
+                {prospect.status?.toUpperCase()}
+              </span>
             </div>
           </div>
         </div>
