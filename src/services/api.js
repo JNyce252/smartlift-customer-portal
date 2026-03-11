@@ -23,6 +23,7 @@ export const api = {
   getHealth: () => request('/health'),
   getCustomers: () => request('/customers'),
   getElevators: () => request('/elevators'),
+  createProspect: (data) => request(`/prospects`, { method: 'POST', body: JSON.stringify(data) }),
   getProspects: () => request('/prospects'),
   getProspect: (id) => request(`/prospects/${id}`),
   getTickets: () => request('/tickets'),
