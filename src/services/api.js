@@ -24,6 +24,7 @@ export const api = {
   getCustomers: () => request('/customers'),
   getElevators: () => request('/elevators'),
   getProspects: () => request('/prospects'),
+  getProspect: (id) => request(`/prospects/${id}`),
   getTickets: () => request('/tickets'),
   getMaintenance: () => request('/maintenance'),
   getInvoices: () => request('/invoices'),

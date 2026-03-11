@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Building2, MapPin, Phone, Mail, Star, LogOut, Brain, TrendingUp, Wrench, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 
 const ProspectDetails = () => {
   const { id } = useParams();
@@ -11,8 +12,8 @@ const ProspectDetails = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(`${process.env.REACT_APP_API_BASE_URL}/prospects/${id}`)
-      .then(r => r.json())
+    api.getProspect(id)
+      
       .then(setProspect)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
