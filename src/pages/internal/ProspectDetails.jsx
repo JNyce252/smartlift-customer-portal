@@ -1,30 +1,87 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp } from 'lucide-react';
+import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
+const HUNTER_KEY = process.env.REACT_APP_HUNTER_API_KEY;
 
 const ProspectDetails = () => {
   const { id } = useParams();
   const { user, logout } = useAuth();
   const [prospect, setProspect] = useState(null);
   const [tdlr, setTdlr] = useState(null);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tdlrExpanded, setTdlrExpanded] = useState(false);
+  const [hunterLoading, setHunterLoading] = useState(false);
+  const [hunterDomain, setHunterDomain] = useState('');
+  const [hunterError, setHunterError] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     Promise.all([
       fetch(`${BASE_URL}/prospects/${id}`, { headers }).then(r => r.json()),
-      fetch(`${BASE_URL}/prospects/${id}/tdlr`, { headers }).then(r => r.json()).catch(() => null)
+      fetch(`${BASE_URL}/prospects/${id}/tdlr`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${BASE_URL}/prospects/${id}/contacts`, { headers }).then(r => r.json()).catch(() => []),
     ])
-    .then(([p, t]) => { setProspect(p); setTdlr(t); })
+    .then(([p, t, c]) => {
+      setProspect(p);
+      setTdlr(t);
+      setContacts(Array.isArray(c) ? c : []);
+      if (p.website) {
+        try { setHunterDomain(new URL(p.website).hostname.replace('www.', '')); } catch {}
+      }
+    })
     .catch(e => setError(e.message))
     .finally(() => setLoading(false));
   }, [id]);
+
+  const searchHunter = async () => {
+    if (!hunterDomain) return;
+    setHunterLoading(true);
+    setHunterError(null);
+    try {
+      const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${hunterDomain}&api_key=${HUNTER_KEY}&limit=10`);
+      const data = await res.json();
+      if (data.errors) { setHunterError(data.errors[0]?.details || 'Hunter.io error'); return; }
+
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+
+      const newContacts = [];
+      for (const email of (data.data?.emails || [])) {
+        try {
+          const r = await fetch(`${BASE_URL}/prospects/${id}/contacts`, {
+            method: 'POST', headers,
+            body: JSON.stringify({
+              first_name: email.first_name,
+              last_name: email.last_name,
+              email: email.value,
+              title: email.position,
+              linkedin_url: email.linkedin,
+              confidence: email.confidence,
+              source: 'hunter'
+            })
+          });
+          const saved = await r.json();
+          newContacts.push(saved);
+        } catch {}
+      }
+      setContacts(prev => {
+        const existing = prev.map(c => c.email);
+        const fresh = newContacts.filter(c => !existing.includes(c.email));
+        return [...prev, ...fresh];
+      });
+      if (newContacts.length === 0) setHunterError('No contacts found for this domain.');
+    } catch (e) {
+      setHunterError('Failed to search Hunter.io: ' + e.message);
+    } finally {
+      setHunterLoading(false);
+    }
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -47,15 +104,12 @@ const ProspectDetails = () => {
 
   const urgencyColor = { high: 'bg-red-500/20 text-red-400 border-red-500/30', medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30', low: 'bg-green-500/20 text-green-400 border-green-500/30' };
   const annualPotential = prospect.estimated_elevators ? prospect.estimated_elevators * 8000 : null;
-
   const hasTdlr = tdlr && parseInt(tdlr.summary?.total_elevators) > 0;
   const certExpired = tdlr?.summary?.expired_certs > 0;
   const lastInspection = tdlr?.summary?.last_inspection ? new Date(tdlr.summary.last_inspection) : null;
   const certExpiry = tdlr?.summary?.cert_expiry ? new Date(tdlr.summary.cert_expiry) : null;
   const daysSinceInspection = lastInspection ? Math.floor((new Date() - lastInspection) / (1000 * 60 * 60 * 24)) : null;
   const daysUntilExpiry = certExpiry ? Math.floor((certExpiry - new Date()) / (1000 * 60 * 60 * 24)) : null;
-
-  // Group elevators by type
   const groupedByType = tdlr?.elevators?.reduce((acc, e) => {
     const type = e.equipment_type || 'UNKNOWN';
     if (!acc[type]) acc[type] = [];
@@ -107,7 +161,6 @@ const ProspectDetails = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Building Profile */}
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Layers className="w-5 h-5 text-purple-400" />Building Profile</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -125,7 +178,6 @@ const ProspectDetails = () => {
             </div>
           </div>
 
-          {/* AI Analysis */}
           <div className="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-5">
             <h3 className="text-white font-bold mb-3 flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />AI Analysis</h3>
             {prospect.ai_summary ? (
@@ -149,8 +201,6 @@ const ProspectDetails = () => {
                 <span className="ml-1 px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">Live Data</span>
               </h3>
             </div>
-
-            {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
               <div className="bg-gray-700/50 rounded-xl p-4 text-center border border-gray-600">
                 <p className="text-gray-400 text-xs mb-1">Registered Units</p>
@@ -171,8 +221,6 @@ const ProspectDetails = () => {
                 {daysUntilExpiry !== null && <p className="text-gray-500 text-xs mt-0.5">{certExpired ? 'EXPIRED' : `${daysUntilExpiry} days remaining`}</p>}
               </div>
             </div>
-
-            {/* Equipment Type Breakdown */}
             {groupedByType && (
               <div className="flex gap-3 mb-5 flex-wrap">
                 {Object.entries(groupedByType).map(([type, units]) => (
@@ -184,50 +232,108 @@ const ProspectDetails = () => {
                 ))}
               </div>
             )}
-
-            {/* Collapsible Table */}
-            <button
-              onClick={() => setTdlrExpanded(!tdlrExpanded)}
+            <button onClick={() => setTdlrExpanded(!tdlrExpanded)}
               className="w-full flex items-center justify-between px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg border border-gray-600 transition-colors">
               <span className="text-white text-sm font-medium">View All {tdlr.elevators.length} Inspection Records</span>
               {tdlrExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
             </button>
-
             {tdlrExpanded && (
               <div className="mt-4 overflow-x-auto rounded-lg border border-gray-700">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-700/50 text-gray-400 text-xs">
-                      <th className="text-left px-4 py-3">#</th>
-                      <th className="text-left px-4 py-3">Type</th>
-                      <th className="text-left px-4 py-3">Drive</th>
-                      <th className="text-left px-4 py-3">Floors</th>
-                      <th className="text-left px-4 py-3">Installed</th>
-                      <th className="text-left px-4 py-3">Last Inspection</th>
-                      <th className="text-left px-4 py-3">Cert Expiry</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tdlr.elevators.map((e, i) => {
-                      const expired = e.expiration && new Date(e.expiration) < new Date();
-                      return (
-                        <tr key={i} className="border-t border-gray-700/50 hover:bg-gray-700/20">
-                          <td className="px-4 py-2.5 text-gray-500 text-xs">{i + 1}</td>
-                          <td className="px-4 py-2.5 text-gray-300">{e.equipment_type}</td>
-                          <td className="px-4 py-2.5 text-gray-400">{e.drive_type}</td>
-                          <td className="px-4 py-2.5 text-gray-300">{e.floors || '—'}</td>
-                          <td className="px-4 py-2.5 text-gray-400">{e.year_installed || '—'}</td>
-                          <td className="px-4 py-2.5 text-gray-300">{e.most_recent_inspection ? new Date(e.most_recent_inspection).toLocaleDateString() : '—'}</td>
-                          <td className={`px-4 py-2.5 font-medium ${expired ? 'text-red-400' : 'text-green-400'}`}>{e.expiration ? new Date(e.expiration).toLocaleDateString() : '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
+                  <thead><tr className="bg-gray-700/50 text-gray-400 text-xs">
+                    <th className="text-left px-4 py-3">#</th>
+                    <th className="text-left px-4 py-3">Type</th>
+                    <th className="text-left px-4 py-3">Drive</th>
+                    <th className="text-left px-4 py-3">Floors</th>
+                    <th className="text-left px-4 py-3">Installed</th>
+                    <th className="text-left px-4 py-3">Last Inspection</th>
+                    <th className="text-left px-4 py-3">Cert Expiry</th>
+                  </tr></thead>
+                  <tbody>{tdlr.elevators.map((e, i) => {
+                    const expired = e.expiration && new Date(e.expiration) < new Date();
+                    return (
+                      <tr key={i} className="border-t border-gray-700/50 hover:bg-gray-700/20">
+                        <td className="px-4 py-2.5 text-gray-500 text-xs">{i + 1}</td>
+                        <td className="px-4 py-2.5 text-gray-300">{e.equipment_type}</td>
+                        <td className="px-4 py-2.5 text-gray-400">{e.drive_type}</td>
+                        <td className="px-4 py-2.5 text-gray-300">{e.floors || '—'}</td>
+                        <td className="px-4 py-2.5 text-gray-400">{e.year_installed || '—'}</td>
+                        <td className="px-4 py-2.5 text-gray-300">{e.most_recent_inspection ? new Date(e.most_recent_inspection).toLocaleDateString() : '—'}</td>
+                        <td className={`px-4 py-2.5 font-medium ${expired ? 'text-red-400' : 'text-green-400'}`}>{e.expiration ? new Date(e.expiration).toLocaleDateString() : '—'}</td>
+                      </tr>
+                    );
+                  })}</tbody>
                 </table>
               </div>
             )}
           </div>
         )}
+
+        {/* Contacts Section */}
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <User className="w-5 h-5 text-purple-400" />Contact Intelligence
+            <span className="ml-1 px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-xs">Hunter.io</span>
+          </h3>
+
+          {/* Domain Search */}
+          <div className="flex gap-3 mb-5">
+            <div className="relative flex-1">
+              <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <input type="text" value={hunterDomain} onChange={e => setHunterDomain(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && searchHunter()}
+                placeholder="company domain (e.g. marriott.com)"
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
+            </div>
+            <button onClick={searchHunter} disabled={hunterLoading || !hunterDomain}
+              className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
+              <Search className="w-4 h-4" />{hunterLoading ? 'Searching...' : 'Find Contacts'}
+            </button>
+          </div>
+
+          {hunterError && <p className="text-red-400 text-sm mb-4">{hunterError}</p>}
+
+          {contacts.length > 0 ? (
+            <div className="space-y-3">
+              {contacts.map((c, i) => (
+                <div key={i} className="flex items-center justify-between bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-600/20 rounded-full border border-purple-600/30 flex items-center justify-center">
+                      <User className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{c.first_name || ''} {c.last_name || ''}</p>
+                      {c.title && <p className="text-gray-400 text-sm">{c.title}</p>}
+                      <p className="text-purple-400 text-sm">{c.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {c.confidence && (
+                      <div className="text-center">
+                        <p className="text-gray-500 text-xs">Confidence</p>
+                        <p className={`font-bold text-sm ${c.confidence >= 80 ? 'text-green-400' : c.confidence >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{c.confidence}%</p>
+                      </div>
+                    )}
+                    <a href={`mailto:${c.email}`} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1">
+                      <Mail className="w-3.5 h-3.5" />Email
+                    </a>
+                    {c.linkedin_url && (
+                      <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1">
+                        <ExternalLink className="w-3.5 h-3.5" />LinkedIn
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 border border-dashed border-gray-600 rounded-lg">
+              <User className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+              <p className="text-gray-400 text-sm">No contacts yet — search by company domain above</p>
+              <p className="text-gray-500 text-xs mt-1">Powered by Hunter.io</p>
+            </div>
+          )}
+        </div>
 
         {/* Scores + Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
