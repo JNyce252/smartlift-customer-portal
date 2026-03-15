@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers } from 'lucide-react';
+import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { api } from '../../services/api';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -13,11 +12,11 @@ const ProspectDetails = () => {
   const [tdlr, setTdlr] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tdlrExpanded, setTdlrExpanded] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-
     Promise.all([
       fetch(`${BASE_URL}/prospects/${id}`, { headers }).then(r => r.json()),
       fetch(`${BASE_URL}/prospects/${id}/tdlr`, { headers }).then(r => r.json()).catch(() => null)
@@ -42,16 +41,27 @@ const ProspectDetails = () => {
   const scoreColor = (s) => s >= 80 ? 'text-green-400' : s >= 60 ? 'text-amber-400' : 'text-red-400';
   const scoreBar = (s, max = 100) => (
     <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
-      <div className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-purple-300" style={{ width: `${(s / max) * 100}%` }} />
+      <div className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-purple-300" style={{ width: `${Math.min((s / max) * 100, 100)}%` }} />
     </div>
   );
 
   const urgencyColor = { high: 'bg-red-500/20 text-red-400 border-red-500/30', medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30', low: 'bg-green-500/20 text-green-400 border-green-500/30' };
   const annualPotential = prospect.estimated_elevators ? prospect.estimated_elevators * 8000 : null;
 
+  const hasTdlr = tdlr && parseInt(tdlr.summary?.total_elevators) > 0;
   const certExpired = tdlr?.summary?.expired_certs > 0;
   const lastInspection = tdlr?.summary?.last_inspection ? new Date(tdlr.summary.last_inspection) : null;
+  const certExpiry = tdlr?.summary?.cert_expiry ? new Date(tdlr.summary.cert_expiry) : null;
   const daysSinceInspection = lastInspection ? Math.floor((new Date() - lastInspection) / (1000 * 60 * 60 * 24)) : null;
+  const daysUntilExpiry = certExpiry ? Math.floor((certExpiry - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+  // Group elevators by type
+  const groupedByType = tdlr?.elevators?.reduce((acc, e) => {
+    const type = e.equipment_type || 'UNKNOWN';
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(e);
+    return acc;
+  }, {});
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -97,7 +107,7 @@ const ProspectDetails = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Stats */}
+          {/* Building Profile */}
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Layers className="w-5 h-5 text-purple-400" />Building Profile</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -131,58 +141,91 @@ const ProspectDetails = () => {
         </div>
 
         {/* TDLR Section */}
-        {tdlr && parseInt(tdlr.summary?.total_elevators) > 0 && (
+        {hasTdlr && (
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-400" />TDLR Inspection Records
-              <span className="ml-2 px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">Live Data</span>
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              {[
-                ['Registered Units', tdlr.summary.total_elevators],
-                ['Passenger', tdlr.summary.passenger],
-                ['Freight', tdlr.summary.freight],
-                ['Expired Certs', tdlr.summary.expired_certs, tdlr.summary.expired_certs > 0 ? 'text-red-400' : 'text-green-400'],
-              ].map(([label, value, cls]) => (
-                <div key={label} className="bg-gray-700/50 rounded-lg p-3 text-center">
-                  <p className="text-gray-400 text-xs">{label}</p>
-                  <p className={`font-bold text-xl ${cls || 'text-white'}`}>{value}</p>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-bold flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-400" />TDLR Inspection Records
+                <span className="ml-1 px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">Live Data</span>
+              </h3>
             </div>
-            {lastInspection && (
-              <div className="flex items-center gap-3 mb-4 p-3 bg-gray-700/30 rounded-lg">
-                <Calendar className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                <div>
-                  <p className="text-white text-sm font-medium">Most Recent Inspection: {lastInspection.toLocaleDateString()}</p>
-                  <p className={`text-xs ${daysSinceInspection > 300 ? 'text-amber-400' : 'text-gray-400'}`}>{daysSinceInspection} days ago {daysSinceInspection > 300 ? '— inspection overdue soon' : ''}</p>
-                </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+              <div className="bg-gray-700/50 rounded-xl p-4 text-center border border-gray-600">
+                <p className="text-gray-400 text-xs mb-1">Registered Units</p>
+                <p className="text-white font-bold text-3xl">{tdlr.summary.total_elevators}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-xl p-4 text-center border border-gray-600">
+                <p className="text-gray-400 text-xs mb-1">Equipment Breakdown</p>
+                <p className="text-white font-bold text-lg">{tdlr.summary.passenger} pass / {tdlr.summary.freight} freight</p>
+              </div>
+              <div className={`rounded-xl p-4 text-center border ${daysSinceInspection > 300 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-gray-700/50 border-gray-600'}`}>
+                <p className="text-gray-400 text-xs mb-1">Last Inspection</p>
+                <p className={`font-bold text-lg ${daysSinceInspection > 300 ? 'text-amber-400' : 'text-white'}`}>{lastInspection ? lastInspection.toLocaleDateString() : '—'}</p>
+                {daysSinceInspection && <p className="text-gray-500 text-xs mt-0.5">{daysSinceInspection} days ago</p>}
+              </div>
+              <div className={`rounded-xl p-4 text-center border ${certExpired ? 'bg-red-500/10 border-red-500/30' : daysUntilExpiry < 60 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-green-500/10 border-green-500/30'}`}>
+                <p className="text-gray-400 text-xs mb-1">Cert Expiry</p>
+                <p className={`font-bold text-lg ${certExpired ? 'text-red-400' : daysUntilExpiry < 60 ? 'text-amber-400' : 'text-green-400'}`}>{certExpiry ? certExpiry.toLocaleDateString() : '—'}</p>
+                {daysUntilExpiry !== null && <p className="text-gray-500 text-xs mt-0.5">{certExpired ? 'EXPIRED' : `${daysUntilExpiry} days remaining`}</p>}
+              </div>
+            </div>
+
+            {/* Equipment Type Breakdown */}
+            {groupedByType && (
+              <div className="flex gap-3 mb-5 flex-wrap">
+                {Object.entries(groupedByType).map(([type, units]) => (
+                  <div key={type} className="flex items-center gap-2 bg-gray-700/50 rounded-lg px-4 py-2 border border-gray-600">
+                    <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                    <span className="text-gray-300 text-sm font-medium">{type}</span>
+                    <span className="text-white font-bold">{units.length}</span>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="text-gray-400 text-xs border-b border-gray-700">
-                  <th className="text-left py-2 pr-4">Unit #</th>
-                  <th className="text-left py-2 pr-4">Type</th>
-                  <th className="text-left py-2 pr-4">Drive</th>
-                  <th className="text-left py-2 pr-4">Floors</th>
-                  <th className="text-left py-2 pr-4">Installed</th>
-                  <th className="text-left py-2 pr-4">Last Inspection</th>
-                  <th className="text-left py-2">Cert Expiry</th>
-                </tr></thead>
-                <tbody>{tdlr.elevators.map((e, i) => (
-                  <tr key={i} className="border-b border-gray-700/50 hover:bg-gray-700/20">
-                    <td className="py-2 pr-4 text-purple-400 font-mono text-xs">{e.elevator_number}</td>
-                    <td className="py-2 pr-4 text-gray-300">{e.equipment_type}</td>
-                    <td className="py-2 pr-4 text-gray-400">{e.drive_type}</td>
-                    <td className="py-2 pr-4 text-gray-300">{e.floors || '—'}</td>
-                    <td className="py-2 pr-4 text-gray-400">{e.year_installed || '—'}</td>
-                    <td className="py-2 pr-4 text-gray-300">{e.most_recent_inspection ? new Date(e.most_recent_inspection).toLocaleDateString() : '—'}</td>
-                    <td className={`py-2 ${e.expiration && new Date(e.expiration) < new Date() ? 'text-red-400' : 'text-green-400'}`}>{e.expiration ? new Date(e.expiration).toLocaleDateString() : '—'}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
+
+            {/* Collapsible Table */}
+            <button
+              onClick={() => setTdlrExpanded(!tdlrExpanded)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg border border-gray-600 transition-colors">
+              <span className="text-white text-sm font-medium">View All {tdlr.elevators.length} Inspection Records</span>
+              {tdlrExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+
+            {tdlrExpanded && (
+              <div className="mt-4 overflow-x-auto rounded-lg border border-gray-700">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-700/50 text-gray-400 text-xs">
+                      <th className="text-left px-4 py-3">#</th>
+                      <th className="text-left px-4 py-3">Type</th>
+                      <th className="text-left px-4 py-3">Drive</th>
+                      <th className="text-left px-4 py-3">Floors</th>
+                      <th className="text-left px-4 py-3">Installed</th>
+                      <th className="text-left px-4 py-3">Last Inspection</th>
+                      <th className="text-left px-4 py-3">Cert Expiry</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tdlr.elevators.map((e, i) => {
+                      const expired = e.expiration && new Date(e.expiration) < new Date();
+                      return (
+                        <tr key={i} className="border-t border-gray-700/50 hover:bg-gray-700/20">
+                          <td className="px-4 py-2.5 text-gray-500 text-xs">{i + 1}</td>
+                          <td className="px-4 py-2.5 text-gray-300">{e.equipment_type}</td>
+                          <td className="px-4 py-2.5 text-gray-400">{e.drive_type}</td>
+                          <td className="px-4 py-2.5 text-gray-300">{e.floors || '—'}</td>
+                          <td className="px-4 py-2.5 text-gray-400">{e.year_installed || '—'}</td>
+                          <td className="px-4 py-2.5 text-gray-300">{e.most_recent_inspection ? new Date(e.most_recent_inspection).toLocaleDateString() : '—'}</td>
+                          <td className={`px-4 py-2.5 font-medium ${expired ? 'text-red-400' : 'text-green-400'}`}>{e.expiration ? new Date(e.expiration).toLocaleDateString() : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -191,13 +234,16 @@ const ProspectDetails = () => {
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-purple-400" />Intelligence Scores</h3>
             {[
-              ['Lead Score', prospect.lead_score, 100],
-              ['Sentiment Score', prospect.sentiment_score ? prospect.sentiment_score * 10 : null, 100],
-              ['Reputation Score', prospect.reputation_score ? prospect.reputation_score * 10 : null, 100],
-            ].map(([label, value, max]) => (
+              ['Lead Score', prospect.lead_score, 100, prospect.lead_score],
+              ['Sentiment Score', prospect.sentiment_score, 10, prospect.sentiment_score ? prospect.sentiment_score * 10 : null],
+              ['Reputation Score', prospect.reputation_score, 10, prospect.reputation_score ? prospect.reputation_score * 10 : null],
+            ].map(([label, raw, max, barVal]) => (
               <div key={label} className="mb-4">
-                <div className="flex justify-between mb-1"><span className="text-gray-400 text-sm">{label}</span><span className={`font-bold ${scoreColor(value)}`}>{value ? (label === 'Lead Score' ? value : (value / 10).toFixed(1)) : 'N/A'}</span></div>
-                {value && scoreBar(value, max)}
+                <div className="flex justify-between mb-1">
+                  <span className="text-gray-400 text-sm">{label}</span>
+                  <span className={`font-bold ${scoreColor(barVal)}`}>{raw ? (label === 'Lead Score' ? raw : parseFloat(raw).toFixed(1)) : 'N/A'}</span>
+                </div>
+                {barVal && scoreBar(barVal, 100)}
               </div>
             ))}
             {prospect.common_issues && (
