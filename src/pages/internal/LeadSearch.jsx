@@ -71,7 +71,17 @@ const LeadSearch = () => {
   const importProspect = async (place) => {
     setImporting(prev => ({ ...prev, [place.google_place_id]: true }));
     try {
-      await api.createProspect(place);
+      // Enrich with Places Details to get website, phone
+      let enriched = { ...place };
+      try {
+        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.google_place_id}&fields=website,formatted_phone_number&key=${PLACES_KEY}`;
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(detailsUrl)}`;
+        const res = await fetch(proxyUrl);
+        const data = await res.json();
+        if (data.result?.website) enriched.website = data.result.website;
+        if (data.result?.formatted_phone_number) enriched.phone = data.result.formatted_phone_number;
+      } catch {}
+      await api.createProspect(enriched);
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
       // Refresh saved prospects
       const updated = await api.getProspects();

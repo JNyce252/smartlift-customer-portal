@@ -18,6 +18,10 @@ const ProspectDetails = () => {
   const [hunterLoading, setHunterLoading] = useState(false);
   const [hunterDomain, setHunterDomain] = useState('');
   const [hunterError, setHunterError] = useState(null);
+  const [autoSearched, setAutoSearched] = useState(false);
+  const [proposal, setProposal] = useState(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [showProposal, setShowProposal] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');
@@ -309,7 +313,7 @@ const ProspectDetails = () => {
               <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
               <input type="text" value={hunterDomain} onChange={e => setHunterDomain(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && searchHunter()}
-                placeholder="company domain (e.g. marriott.com)"
+                placeholder={prospect.website ? new URL(prospect.website).hostname.replace("www.","") + " (auto-filled)" : "e.g. marriott.com, hilton.com, omnihotels.com"}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
             </div>
             <button onClick={searchHunter} disabled={hunterLoading || !hunterDomain || contacts.length > 0}
@@ -317,8 +321,10 @@ const ProspectDetails = () => {
               <Search className="w-4 h-4" />{hunterLoading ? 'Searching...' : contacts.length > 0 ? 'Already Searched' : 'Find Contacts'}
             </button>
           </div>
-          <p className="text-gray-500 text-xs mb-4 flex items-center gap-1">
-            Uses 1 Hunter.io credit per domain · Results are saved permanently · {contacts.length > 0 ? <span className="text-green-500">✓ Contacts loaded from cache — no credit used</span> : <span className="text-amber-400">1 credit will be used on search</span>}
+          <p className="text-gray-500 text-xs mb-3">
+            {contacts.length > 0 
+              ? <span className="text-green-500">✓ Contacts loaded from cache — no Hunter.io credit used</span> 
+              : <span className="text-amber-400">Uses 1 Hunter.io credit · Enter the company website domain (e.g. marriott.com, hilton.com)</span>}
           </p>
 
           {hunterError && <p className="text-red-400 text-sm mb-4">{hunterError}</p>}
