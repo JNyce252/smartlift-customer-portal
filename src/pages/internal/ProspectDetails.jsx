@@ -83,6 +83,33 @@ const ProspectDetails = () => {
     }
   };
 
+  const generateProposal = async () => {
+    setProposalLoading(true);
+    setShowProposal(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const res = await fetch(`${BASE_URL}/prospects/${id}/proposal`, { method: 'POST', headers });
+      const data = await res.json();
+      setProposal(data.content);
+    } catch (e) {
+      setProposal('Failed to generate proposal: ' + e.message);
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const formatProposal = (text) => {
+    if (!text) return null;
+    return text.split('\n').map((line, i) => {
+      if (line.startsWith('## ')) return <h3 key={i} className="text-purple-400 font-bold text-lg mt-6 mb-2">{line.replace('## ', '')}</h3>;
+      if (line.startsWith('# ')) return <h2 key={i} className="text-white font-bold text-xl mt-6 mb-2">{line.replace('# ', '')}</h2>;
+      if (line.startsWith('- ')) return <li key={i} className="text-gray-300 text-sm ml-4 mb-1 list-disc">{line.replace('- ', '')}</li>;
+      if (line.trim() === '') return <div key={i} className="mb-2" />;
+      return <p key={i} className="text-gray-300 text-sm mb-2 leading-relaxed">{line}</p>;
+    });
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
       <div className="text-center"><Brain className="w-12 h-12 text-purple-400 mx-auto mb-3 animate-pulse" /><p className="text-white text-lg">Loading prospect intelligence...</p></div>
@@ -374,11 +401,46 @@ const ProspectDetails = () => {
             <div className="space-y-3 mt-4">
               {prospect.phone && <a href={`tel:${prospect.phone}`} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Phone className="w-4 h-4" />Call Now</a>}
               <button className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Clock className="w-4 h-4" />Schedule Visit</button>
-              <button className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Brain className="w-4 h-4" />Generate Proposal</button>
+              <button onClick={generateProposal} disabled={proposalLoading} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Brain className="w-4 h-4" />{proposalLoading ? "Generating..." : "Generate Proposal"}</button>
             </div>
           </div>
         </div>
       </div>
+      {/* Proposal Modal */}
+      {showProposal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-3xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />AI-Generated Proposal</h2>
+              <div className="flex gap-3">
+                {proposal && (
+                  <button onClick={() => navigator.clipboard.writeText(proposal)}
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
+                    Copy
+                  </button>
+                )}
+                <button onClick={() => setShowProposal(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {proposalLoading ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <Brain className="w-12 h-12 text-purple-400 animate-pulse mb-4" />
+                  <p className="text-white text-lg mb-2">Generating proposal...</p>
+                  <p className="text-gray-400 text-sm">Analyzing prospect data and crafting personalized proposal</p>
+                </div>
+              ) : (
+                <div className="prose prose-invert max-w-none">
+                  {formatProposal(proposal)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
