@@ -22,6 +22,9 @@ const ProspectDetails = () => {
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({ date: '', time: '09:00', technician: '', notes: '' });
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -39,6 +42,7 @@ const ProspectDetails = () => {
       setProspect(p);
       setTdlr(t);
       setContacts(Array.isArray(c) ? c : []);
+      setNotes(p.notes || '');
       if (p.website) {
         try { setHunterDomain(new URL(p.website).hostname.replace('www.', '')); } catch {}
       }
@@ -88,6 +92,24 @@ const ProspectDetails = () => {
       setHunterError('Failed to search Hunter.io: ' + e.message);
     } finally {
       setHunterLoading(false);
+    }
+  };
+
+  const saveNotes = async () => {
+    setNotesSaving(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/prospects/${id}/notes`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ notes })
+      });
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } catch (e) {
+      alert('Failed to save notes: ' + e.message);
+    } finally {
+      setNotesSaving(false);
     }
   };
 
@@ -397,6 +419,27 @@ const ProspectDetails = () => {
               <p className="text-gray-500 text-xs mt-1">Powered by Hunter.io</p>
             </div>
           )}
+        </div>
+
+        {/* Notes Section */}
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 mb-6">
+          <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-purple-400" />Staff Notes
+          </h3>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Add internal notes about this prospect — conversations, observations, follow-up reminders..."
+            rows={4}
+            className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none mb-3"
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-gray-500 text-xs">Notes are visible to all staff members</p>
+            <button onClick={saveNotes} disabled={notesSaving}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
+              {notesSaved ? <><CheckCircle className="w-4 h-4" />Saved!</> : notesSaving ? 'Saving...' : 'Save Notes'}
+            </button>
+          </div>
         </div>
 
         {/* Scores + Actions */}
