@@ -24,6 +24,10 @@ const LeadSearch = () => {
   const [cityFilter, setCityFilter] = useState('all');
   const [minScore, setMinScore] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [cityFilter, setCityFilter] = useState('all');
+  const [minScore, setMinScore] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     api.getProspects()
