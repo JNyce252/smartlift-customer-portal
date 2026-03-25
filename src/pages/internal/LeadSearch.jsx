@@ -20,6 +20,10 @@ const LeadSearch = () => {
   const [placeLoading, setPlaceLoading] = useState(false);
   const [importing, setImporting] = useState({});
   const [imported, setImported] = useState({});
+  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [cityFilter, setCityFilter] = useState('all');
+  const [minScore, setMinScore] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     api.getProspects()
@@ -30,13 +34,18 @@ const LeadSearch = () => {
 
   useEffect(() => {
     const q = search.toLowerCase();
-    setFiltered(prospects.filter(p =>
-      p.name?.toLowerCase().includes(q) ||
-      p.city?.toLowerCase().includes(q) ||
-      p.state?.toLowerCase().includes(q) ||
-      p.address?.toLowerCase().includes(q)
-    ));
-  }, [search, prospects]);
+    setFiltered(prospects.filter(p => {
+      const matchesSearch = !q || p.name?.toLowerCase().includes(q) || p.city?.toLowerCase().includes(q) || p.state?.toLowerCase().includes(q) || p.address?.toLowerCase().includes(q);
+      const matchesUrgency = urgencyFilter === 'all' || p.service_urgency === urgencyFilter;
+      const matchesCity = cityFilter === 'all' || p.city === cityFilter;
+      const matchesScore = !minScore || (p.lead_score || 0) >= minScore;
+      const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+      return matchesSearch && matchesUrgency && matchesCity && matchesScore && matchesStatus;
+    }));
+  }, [search, prospects, urgencyFilter, cityFilter, minScore, statusFilter]);
+
+  const cities = [...new Set(prospects.map(p => p.city).filter(Boolean))].sort();
+  const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
 
   const searchPlaces = async () => {
     if (!placeSearch.trim()) return;
@@ -163,7 +172,43 @@ const LeadSearch = () => {
                   className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
               </div>
             </div>
-            <p className="text-gray-400 text-sm mb-4">{filtered.length} prospects</p>
+            {/* Filters */}
+            <div className="flex gap-3 flex-wrap mb-4 items-center">
+              <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                <option value="all">All Urgency</option>
+                <option value="high">High Urgency</option>
+                <option value="medium">Medium Urgency</option>
+                <option value="low">Low Urgency</option>
+              </select>
+              <select value={cityFilter} onChange={e => setCityFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                <option value="all">All Cities</option>
+                {cities.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                <option value="all">All Status</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="proposal_sent">Proposal Sent</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+              </select>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm whitespace-nowrap">Min Score:</span>
+                <input type="number" value={minScore} onChange={e => setMinScore(Number(e.target.value))}
+                  min="0" max="100" placeholder="0"
+                  className="w-16 px-2 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+              </div>
+              {activeFilters > 0 && (
+                <button onClick={() => { setUrgencyFilter('all'); setCityFilter('all'); setMinScore(0); setStatusFilter('all'); }}
+                  className="px-3 py-2 bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/30">
+                  Clear Filters ({activeFilters})
+                </button>
+              )}
+            </div>
+            <p className="text-gray-400 text-sm mb-4">{filtered.length} of {prospects.length} prospects</p>
             <div className="space-y-4">
               {filtered.map((prospect) => (
                 <div key={prospect.id} className="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-purple-500 transition-colors">
