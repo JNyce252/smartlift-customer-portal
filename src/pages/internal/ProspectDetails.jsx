@@ -22,6 +22,10 @@ const ProspectDetails = () => {
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({ date: '', time: '09:00', technician: '', notes: '' });
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleSuccess, setScheduleSuccess] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');
@@ -84,6 +88,31 @@ const ProspectDetails = () => {
       setHunterError('Failed to search Hunter.io: ' + e.message);
     } finally {
       setHunterLoading(false);
+    }
+  };
+
+  const submitSchedule = async () => {
+    setScheduleLoading(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/tickets`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          elevator_id: 1,
+          title: `Site Visit — ${prospect.name}`,
+          description: `Scheduled site visit to ${prospect.name} at ${prospect.address}.\nDate: ${scheduleForm.date} at ${scheduleForm.time}\nTechnician: ${scheduleForm.technician || 'TBD'}\nNotes: ${scheduleForm.notes || 'None'}`,
+          priority: prospect.service_urgency === 'high' ? 'high' : 'medium',
+          assigned_technician: scheduleForm.technician || null,
+          scheduled_date: scheduleForm.date ? new Date(scheduleForm.date + 'T' + scheduleForm.time).toISOString() : null,
+        })
+      });
+      setScheduleSuccess(true);
+      setTimeout(() => { setShowSchedule(false); setScheduleSuccess(false); }, 2000);
+    } catch (e) {
+      alert('Failed to schedule: ' + e.message);
+    } finally {
+      setScheduleLoading(false);
     }
   };
 
@@ -406,12 +435,79 @@ const ProspectDetails = () => {
             {prospect.website && <p className="text-gray-400 text-sm mb-4">Website: <a href={prospect.website} target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">{prospect.website}</a></p>}
             <div className="space-y-3 mt-4">
               {prospect.phone && <a href={`tel:${prospect.phone}`} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Phone className="w-4 h-4" />Call Now</a>}
-              <button className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Clock className="w-4 h-4" />Schedule Visit</button>
+              <button onClick={() => setShowSchedule(true)} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Clock className="w-4 h-4" />Schedule Visit</button>
               <button onClick={generateProposal} disabled={proposalLoading} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Brain className="w-4 h-4" />{proposalLoading ? "Generating..." : "Generate Proposal"}</button>
             </div>
           </div>
         </div>
       </div>
+      {/* Schedule Visit Modal */}
+      {showSchedule && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Clock className="w-5 h-5 text-blue-400" />Schedule Site Visit</h2>
+              <button onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              {scheduleSuccess ? (
+                <div className="text-center py-8">
+                  <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                  <p className="text-white font-bold text-lg">Visit Scheduled!</p>
+                  <p className="text-gray-400 text-sm mt-1">Service ticket created successfully</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-gray-400 text-sm mb-1">Building</p>
+                    <p className="text-white font-medium">{prospect.name}</p>
+                    <p className="text-gray-500 text-sm">{prospect.address}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-gray-400 text-sm mb-1 block">Date</label>
+                      <input type="date" value={scheduleForm.date}
+                        onChange={e => setScheduleForm(prev => ({ ...prev, date: e.target.value }))}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="text-gray-400 text-sm mb-1 block">Time</label>
+                      <select value={scheduleForm.time}
+                        onChange={e => setScheduleForm(prev => ({ ...prev, time: e.target.value }))}
+                        className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500 text-sm">
+                        {['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00'].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Technician (optional)</label>
+                    <input type="text" value={scheduleForm.technician}
+                      onChange={e => setScheduleForm(prev => ({ ...prev, technician: e.target.value }))}
+                      placeholder="Assign a technician..."
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Notes (optional)</label>
+                    <textarea value={scheduleForm.notes}
+                      onChange={e => setScheduleForm(prev => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Any notes for the visit..."
+                      rows={3}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm resize-none" />
+                  </div>
+                  <button onClick={submitSchedule} disabled={scheduleLoading || !scheduleForm.date}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                    <Clock className="w-4 h-4" />{scheduleLoading ? 'Scheduling...' : 'Confirm Visit'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Proposal Modal */}
       {showProposal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
