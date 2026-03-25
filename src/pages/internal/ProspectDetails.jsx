@@ -22,9 +22,12 @@ const ProspectDetails = () => {
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
-  const [notesSaved, setNotesSaved] = useState(false);
+  const [editingNote, setEditingNote] = useState(null);
+  const [editContent, setEditContent] = useState('');
+  const [noteMenuOpen, setNoteMenuOpen] = useState(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({ date: '', time: '09:00', technician: '', notes: '' });
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -37,12 +40,14 @@ const ProspectDetails = () => {
       fetch(`${BASE_URL}/prospects/${id}`, { headers }).then(r => r.json()),
       fetch(`${BASE_URL}/prospects/${id}/tdlr`, { headers }).then(r => r.json()).catch(() => null),
       fetch(`${BASE_URL}/prospects/${id}/contacts`, { headers }).then(r => r.json()).catch(() => []),
+      fetch(`${BASE_URL}/prospects/${id}/notes`, { headers }).then(r => r.json()).catch(() => []),
     ])
-    .then(([p, t, c]) => {
+    .then(([p, t, c, n]) => {
+      setNotes(Array.isArray(n) ? n : []);
       setProspect(p);
       setTdlr(t);
       setContacts(Array.isArray(c) ? c : []);
-      setNotes(p.notes || '');
+
       if (p.website) {
         try { setHunterDomain(new URL(p.website).hostname.replace('www.', '')); } catch {}
       }
@@ -95,22 +100,52 @@ const ProspectDetails = () => {
     }
   };
 
-  const saveNotes = async () => {
+  const addNote = async () => {
+    if (!newNote.trim()) return;
     setNotesSaving(true);
     try {
       const token = localStorage.getItem('smartlift_token');
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      await fetch(`${BASE_URL}/prospects/${id}/notes`, {
-        method: 'PATCH', headers,
-        body: JSON.stringify({ notes })
+      const res = await fetch(`${BASE_URL}/prospects/${id}/notes`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ content: newNote, created_by: user?.email || 'Staff' })
       });
-      setNotesSaved(true);
-      setTimeout(() => setNotesSaved(false), 2000);
+      const saved = await res.json();
+      setNotes(prev => [saved, ...prev]);
+      setNewNote('');
     } catch (e) {
-      alert('Failed to save notes: ' + e.message);
+      alert('Failed to save note: ' + e.message);
     } finally {
       setNotesSaving(false);
     }
+  };
+
+  const saveEdit = async (noteId) => {
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const res = await fetch(`${BASE_URL}/prospects/${id}/notes/${noteId}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ content: editContent })
+      });
+      const updated = await res.json();
+      setNotes(prev => prev.map(n => n.id === noteId ? updated : n));
+      setEditingNote(null);
+    } catch (e) {
+      alert('Failed to update note: ' + e.message);
+    }
+  };
+
+  const deleteNote = async (noteId) => {
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/prospects/${id}/notes/${noteId}`, { method: 'DELETE', headers });
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+    } catch (e) {
+      alert('Failed to delete note: ' + e.message);
+    }
+    setNoteMenuOpen(null);
   };
 
   const submitSchedule = async () => {
@@ -423,22 +458,71 @@ const ProspectDetails = () => {
 
         {/* Notes Section */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 mb-6">
-          <h3 className="text-white font-bold mb-3 flex items-center gap-2">
-            <Wrench className="w-5 h-5 text-purple-400" />Staff Notes
+          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-purple-400" />Staff Notes
+            <span className="ml-1 px-2 py-0.5 bg-gray-700 text-gray-400 rounded text-xs">{notes.length}</span>
           </h3>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Add internal notes about this prospect — conversations, observations, follow-up reminders..."
-            rows={4}
-            className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none mb-3"
-          />
-          <div className="flex items-center justify-between">
-            <p className="text-gray-500 text-xs">Notes are visible to all staff members</p>
-            <button onClick={saveNotes} disabled={notesSaving}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
-              {notesSaved ? <><CheckCircle className="w-4 h-4" />Saved!</> : notesSaving ? 'Saving...' : 'Save Notes'}
+
+          {/* Add note input */}
+          <div className="flex gap-3 mb-5">
+            <textarea
+              value={newNote}
+              onChange={e => setNewNote(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && e.metaKey && addNote()}
+              placeholder="Add a note — conversations, observations, follow-up reminders... (Cmd+Enter to save)"
+              rows={2}
+              className="flex-1 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none"
+            />
+            <button onClick={addNote} disabled={notesSaving || !newNote.trim()}
+              className="px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium self-end">
+              {notesSaving ? '...' : 'Add'}
             </button>
+          </div>
+
+          {/* Notes list */}
+          <div className="space-y-3">
+            {notes.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No notes yet — add the first one above</p>
+            )}
+            {notes.map(note => (
+              <div key={note.id} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                {editingNote === note.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editContent}
+                      onChange={e => setEditContent(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-purple-500 text-sm resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(note.id)} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs">Save</button>
+                      <button onClick={() => setEditingNote(null)} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded text-xs">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="text-gray-300 text-sm leading-relaxed">{note.content}</p>
+                      <p className="text-gray-500 text-xs mt-2">{note.created_by} · {new Date(note.created_at).toLocaleDateString()} {new Date(note.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                    </div>
+                    <div className="relative flex-shrink-0">
+                      <button onClick={() => setNoteMenuOpen(noteMenuOpen === note.id ? null : note.id)}
+                        className="text-gray-500 hover:text-white p-1 rounded">
+                        ⋮
+                      </button>
+                      {noteMenuOpen === note.id && (
+                        <div className="absolute right-0 top-6 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-10 w-32">
+                          <button onClick={() => { setEditingNote(note.id); setEditContent(note.content); setNoteMenuOpen(null); }}
+                            className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 text-sm rounded-t-lg">Edit</button>
+                          <button onClick={() => deleteNote(note.id)}
+                            className="w-full text-left px-4 py-2 text-red-400 hover:bg-gray-700 text-sm rounded-b-lg">Delete</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
