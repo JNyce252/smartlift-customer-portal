@@ -22,6 +22,7 @@ const ProspectDetails = () => {
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -148,6 +149,23 @@ const ProspectDetails = () => {
     setNoteMenuOpen(null);
   };
 
+  const updateStatus = async (newStatus) => {
+    setStatusUpdating(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/prospects/${id}/status`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ status: newStatus })
+      });
+      setProspect(prev => ({ ...prev, status: newStatus }));
+    } catch (e) {
+      alert('Failed to update status: ' + e.message);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   const submitSchedule = async () => {
     setScheduleLoading(true);
     try {
@@ -265,6 +283,21 @@ const ProspectDetails = () => {
                   {prospect.service_urgency && <span className={`px-3 py-1 rounded-full text-sm border ${urgencyColor[prospect.service_urgency]}`}>{prospect.service_urgency} urgency</span>}
                   {prospect.modernization_candidate && <span className="px-3 py-1 rounded-full text-sm bg-blue-500/20 text-blue-400 border border-blue-500/30">Modernization Candidate</span>}
                   {certExpired && <span className="px-3 py-1 rounded-full text-sm bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" />Expired Certs</span>}
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-gray-400 text-sm">Status:</span>
+                    <select
+                      value={prospect.status || 'new'}
+                      onChange={e => updateStatus(e.target.value)}
+                      disabled={statusUpdating}
+                      className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 disabled:opacity-50">
+                      <option value="new">New</option>
+                      <option value="contacted">Contacted</option>
+                      <option value="proposal_sent">Proposal Sent</option>
+                      <option value="won">Won</option>
+                      <option value="lost">Lost</option>
+                    </select>
+                    {statusUpdating && <span className="text-gray-400 text-xs">Saving...</span>}
+                  </div>
                 </div>
               </div>
             </div>
