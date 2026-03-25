@@ -246,6 +246,39 @@ const Analytics = () => {
             ))}
           </div>
         </div>
+      {/* TDLR Insights */}
+        {tdlrStats && (
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mt-6">
+            <h3 className="text-white font-bold text-lg mb-5 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-400" />TDLR Elevator Registry Insights
+              <span className="ml-1 px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">Live Data</span>
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {[
+                ['Registered Units', tdlrStats.total_registered, 'text-white'],
+                ['Matched Prospects', tdlrStats.matched_prospects, 'text-purple-400'],
+                ['Expired Certs', tdlrStats.expired_certs, tdlrStats.expired_certs > 0 ? 'text-red-400' : 'text-green-400'],
+                ['Expiring Soon', tdlrStats.expiring_soon, tdlrStats.expiring_soon > 0 ? 'text-amber-400' : 'text-green-400'],
+                ['Avg Equipment Age', `${tdlrStats.avg_equipment_age} yrs`, tdlrStats.avg_equipment_age > 20 ? 'text-amber-400' : 'text-green-400'],
+              ].map(([label, value, cls]) => (
+                <div key={label} className="bg-gray-700/50 rounded-xl p-4 text-center border border-gray-600">
+                  <p className="text-gray-400 text-xs mb-1">{label}</p>
+                  <p className={`font-bold text-2xl ${cls}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+            {(tdlrStats.expired_certs > 0 || tdlrStats.expiring_soon > 0) && (
+              <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                <p className="text-amber-400 text-sm">
+                  {tdlrStats.expired_certs > 0 ? `${tdlrStats.expired_certs} units have expired certifications — ` : ''}
+                  {tdlrStats.expiring_soon > 0 ? `${tdlrStats.expiring_soon} units expiring within 60 days` : ''}
+                  {' — these are high-priority sales opportunities.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
