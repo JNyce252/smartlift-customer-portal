@@ -99,7 +99,6 @@ const ProspectDetails = () => {
       await fetch(`${BASE_URL}/tickets`, {
         method: 'POST', headers,
         body: JSON.stringify({
-          elevator_id: 1,
           title: `Site Visit — ${prospect.name}`,
           description: `Scheduled site visit to ${prospect.name} at ${prospect.address}.\nDate: ${scheduleForm.date} at ${scheduleForm.time}\nTechnician: ${scheduleForm.technician || 'TBD'}\nNotes: ${scheduleForm.notes || 'None'}`,
           priority: prospect.service_urgency === 'high' ? 'high' : 'medium',
@@ -126,7 +125,7 @@ const ProspectDetails = () => {
       const data = await res.json();
       setProposal(data.content);
     } catch (e) {
-      setProposal('Failed to generate proposal: ' + e.message);
+      setProposal('## Error Generating Proposal\n\n' + e.message + '\n\nThis is usually because Amazon Bedrock model access is still pending approval. The nightly AI scorer will automatically generate proposals once access is granted.');
     } finally {
       setProposalLoading(false);
     }
