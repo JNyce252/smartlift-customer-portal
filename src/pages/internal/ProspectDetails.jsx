@@ -22,6 +22,9 @@ const ProspectDetails = () => {
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
+  const [improvingProposal, setImprovingProposal] = useState(false);
+  const [uploadedProposal, setUploadedProposal] = useState('');
+  const [showUpload, setShowUpload] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
@@ -187,6 +190,60 @@ const ProspectDetails = () => {
       alert('Failed to schedule: ' + e.message);
     } finally {
       setScheduleLoading(false);
+    }
+  };
+
+  const printProposal = () => {
+    const printWindow = window.open('', '_blank');
+    const content = proposal || '';
+    const html = content.split('\n').map(line => {
+      if (line.startsWith('## ')) return `<h2>${line.replace('## ', '')}</h2>`;
+      if (line.startsWith('# ')) return `<h1>${line.replace('# ', '')}</h1>`;
+      if (line.startsWith('- ')) return `<li>${line.replace('- ', '')}</li>`;
+      if (line.trim() === '') return '<br/>';
+      return `<p>${line}</p>`;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Proposal — ${prospect.name}</title>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+          h1 { color: #4B0082; border-bottom: 2px solid #4B0082; padding-bottom: 10px; }
+          h2 { color: #1D4ED8; margin-top: 24px; }
+          p { margin: 8px 0; }
+          li { margin: 4px 0; }
+          @media print { body { margin: 20px; } }
+        </style>
+      </head>
+      <body>${html}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 500);
+  };
+
+  const improveProposal = async () => {
+    if (!uploadedProposal.trim()) return;
+    setImprovingProposal(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const res = await fetch(`${BASE_URL}/prospects/${id}/improve-proposal`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ content: uploadedProposal })
+      });
+      const data = await res.json();
+      setProposal(data.content);
+      setShowUpload(false);
+      setShowProposal(true);
+    } catch (e) {
+      alert('Failed to improve proposal: ' + e.message);
+    } finally {
+      setImprovingProposal(false);
     }
   };
 
@@ -667,6 +724,40 @@ const ProspectDetails = () => {
         </div>
       )}
 
+      {/* Upload & Improve Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />Upload & Improve Proposal</h2>
+                <p className="text-gray-400 text-sm mt-1">Paste your existing proposal and AI will enhance it</p>
+              </div>
+              <button onClick={() => setShowUpload(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <textarea
+                value={uploadedProposal}
+                onChange={e => setUploadedProposal(e.target.value)}
+                placeholder="Paste your existing proposal here..."
+                rows={12}
+                className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none"
+              />
+              <div className="flex gap-3">
+                <button onClick={improveProposal} disabled={improvingProposal || !uploadedProposal.trim()}
+                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                  <Brain className="w-4 h-4" />{improvingProposal ? 'Improving...' : 'Improve with AI'}
+                </button>
+                <button onClick={() => setShowUpload(false)}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Proposal Modal */}
       {showProposal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -676,13 +767,23 @@ const ProspectDetails = () => {
                 <h2 className="text-xl font-bold text-white flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />AI-Generated Proposal</h2>
                 <p className="text-purple-400 text-sm mt-0.5">{prospect.name} — {prospect.city}, {prospect.state}</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2 flex-wrap">
                 {proposal && (
-                  <button onClick={() => navigator.clipboard.writeText(proposal)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
-                    Copy
-                  </button>
+                  <>
+                    <button onClick={() => navigator.clipboard.writeText(proposal)}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
+                      Copy
+                    </button>
+                    <button onClick={printProposal}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
+                      Download PDF
+                    </button>
+                  </>
                 )}
+                <button onClick={() => { setShowUpload(true); setShowProposal(false); }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm">
+                  Upload & Improve
+                </button>
                 <button onClick={() => setShowProposal(false)}
                   className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
                   Close
