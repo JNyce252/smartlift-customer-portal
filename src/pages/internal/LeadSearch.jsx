@@ -118,9 +118,10 @@ const LeadSearch = () => {
         if (allResults.length >= 20) break;
       }
 
-      // Sort by distance
+      // Sort by distance, filter out tiny properties (likely no elevators)
       allResults.sort((a, b) => a.distance_meters - b.distance_meters);
-      setPlaceResults(allResults.slice(0, 20));
+      const filtered = allResults.filter(p => !p.total_reviews || p.total_reviews >= 50);
+      setPlaceResults(filtered.slice(0, 20));
       if (allResults.length === 0) setError('No results found — try a different building type or location');
     } catch (e) {
       setError('Search failed: ' + e.message);
@@ -364,12 +365,19 @@ const LeadSearch = () => {
                         )}
                       </div>
                     </div>
-                    <button onClick={() => importProspect(place)}
-                      disabled={importing[place.google_place_id] || imported[place.google_place_id]}
-                      className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors flex-shrink-0 ${
-                        imported[place.google_place_id] ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
-                      {imported[place.google_place_id] ? <><CheckCircle className="w-4 h-4" />Imported</> : importing[place.google_place_id] ? 'Importing...' : <><Plus className="w-4 h-4" />Import</>}
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <a href={`https://www.google.com/search?q=${encodeURIComponent(place.name + ' ' + (place.address || ''))}`}
+                        target="_blank" rel="noreferrer"
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm flex items-center gap-1.5">
+                        <Search className="w-3.5 h-3.5" />Google
+                      </a>
+                      <button onClick={() => importProspect(place)}
+                        disabled={importing[place.google_place_id] || imported[place.google_place_id]}
+                        className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
+                          imported[place.google_place_id] ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                        {imported[place.google_place_id] ? <><CheckCircle className="w-4 h-4" />Imported</> : importing[place.google_place_id] ? 'Importing...' : <><Plus className="w-4 h-4" />Import</>}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
