@@ -92,7 +92,8 @@ const InternalDashboard = () => {
           {[
             { to: '/internal/leads', gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Search, title: 'Find New Leads', sub: 'Discover prospects' },
             { to: '/internal/customers', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: Users, title: 'Customers', sub: 'Manage accounts' },
-            { to: '/internal/routes', gradient: 'from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800', icon: MapPin, title: 'Plan Routes', sub: 'Optimize schedule' },
+            { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
+            { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },
             { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
           ].map(({ to, gradient, icon: Icon, title, sub }) => (
             <Link key={to} to={to} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all`}>
