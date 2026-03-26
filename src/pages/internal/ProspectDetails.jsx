@@ -60,6 +60,61 @@ const ProspectDetails = () => {
     .finally(() => setLoading(false));
   }, [id]);
 
+  // Auto-search Hunter when page loads if no contacts saved
+  useEffect(() => {
+    if (loading || contacts.length > 0 || !prospect) return;
+    
+    let domain = null;
+    if (prospect.website) {
+      try { domain = new URL(prospect.website).hostname.replace('www.', ''); } catch {}
+    }
+    if (!domain) {
+      const knownDomains = {
+        'hyatt': 'hyatt.com', 'marriott': 'marriott.com', 'hilton': 'hilton.com',
+        'westin': 'marriott.com', 'sheraton': 'marriott.com', 'omni': 'omnihotels.com',
+        'four seasons': 'fourseasons.com', 'jw marriott': 'marriott.com',
+        'renaissance': 'marriott.com', 'intercontinental': 'ihg.com',
+        'aloft': 'marriott.com', 'thompson': 'hyatt.com', 'w austin': 'marriott.com',
+        'hampton inn': 'hilton.com', 'comfort inn': 'choicehotels.com',
+        'hyatt regency': 'hyatt.com', 'marriott marquis': 'marriott.com',
+        'holiday inn': 'ihg.com', 'doubletree': 'hilton.com', 'courtyard': 'marriott.com',
+        'fairfield': 'marriott.com', 'homewood': 'hilton.com', 'tru by hilton': 'hilton.com',
+        'best western': 'bestwestern.com', 'country inn': 'radissonhotels.com',
+      };
+      const nameLower = prospect.name.toLowerCase();
+      for (const [key, val] of Object.entries(knownDomains)) {
+        if (nameLower.includes(key)) { domain = val; break; }
+      }
+    }
+    if (domain) {
+      setHunterDomain(domain);
+      // Auto trigger search
+      const autoSearch = async () => {
+        setHunterLoading(true);
+        try {
+          const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${HUNTER_KEY}&limit=10`);
+          const data = await res.json();
+          if (!data.data?.emails?.length) return;
+          const token = localStorage.getItem('smartlift_token');
+          const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+          const saved = [];
+          for (const email of data.data.emails) {
+            try {
+              const r = await fetch(`${BASE_URL}/prospects/${prospect.id}/contacts`, {
+                method: 'POST', headers,
+                body: JSON.stringify({ first_name: email.first_name, last_name: email.last_name, email: email.value, title: email.position, linkedin_url: email.linkedin, confidence: email.confidence, source: 'hunter' })
+              });
+              if (r.ok) saved.push(await r.json());
+            } catch {}
+          }
+          if (saved.length) setContacts(saved);
+        } catch {}
+        finally { setHunterLoading(false); }
+      };
+      autoSearch();
+    }
+  }, [loading, prospect]);
+
   const searchHunter = async () => {
     if (!hunterDomain) return;
     setHunterLoading(true);
