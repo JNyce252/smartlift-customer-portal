@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, LogOut, User, Phone, Mail, MapPin, Globe, Save, CheckCircle, Camera } from 'lucide-react';
+import { Building2, LogOut, User, Phone, Mail, MapPin, Globe, Save, CheckCircle, Camera, Settings } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
@@ -20,7 +20,7 @@ const Profile = () => {
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     fetch(`${BASE_URL}/profile`, { headers })
       .then(r => r.json())
-      .then(data => setProfile(prev => ({ ...prev, ...data })))
+      .then(data => { if (data) setProfile(prev => ({ ...prev, ...data })); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -54,6 +54,12 @@ const Profile = () => {
     </div>
   );
 
+  if (loading) return (
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <p className="text-gray-400">Loading profile...</p>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
@@ -74,16 +80,15 @@ const Profile = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {loading && <div className="text-center py-8"><p className="text-gray-400">Loading profile...</p></div>}
-        {!loading && <div className="mb-8">
+        <div className="mb-8">
           <h2 className="text-3xl font-bold text-white mb-2">Company Profile</h2>
           <p className="text-gray-400">This information is used in proposals, emails, and reports</p>
         </div>
 
-        {/* Logo & Preview */}
+        {/* Logo & Identity */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
           <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Camera className="w-5 h-5 text-purple-400" />Company Identity</h3>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-6 mb-4">
             <div className="w-24 h-24 bg-gray-700 rounded-xl border-2 border-dashed border-gray-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
               {profile.logo_url ? (
                 <img src={profile.logo_url} alt="Logo" className="w-full h-full object-contain" />
@@ -96,10 +101,10 @@ const Profile = () => {
               <input type="text" value={profile.logo_url || ''} onChange={e => setProfile(prev => ({ ...prev, logo_url: e.target.value }))}
                 placeholder="https://your-company.com/logo.png"
                 className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
-              <p className="text-gray-500 text-xs mt-1">Enter a URL to your company logo — shown in proposals and emails</p>
+              <p className="text-gray-500 text-xs mt-1">Enter a URL to your company logo</p>
             </div>
           </div>
-          <div className="mt-4">
+          <div>
             <label className="text-gray-400 text-sm mb-1 block">Company Tagline</label>
             <input type="text" value={profile.tagline || ''} onChange={e => setProfile(prev => ({ ...prev, tagline: e.target.value }))}
               placeholder="e.g. Texas's Premier Elevator Service Provider"
@@ -122,7 +127,7 @@ const Profile = () => {
           </div>
         </div>
 
-        {/* Preview Card */}
+        {/* Preview */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
           <h3 className="text-white font-bold mb-4">Preview — How it appears in proposals</h3>
           <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-5">
@@ -135,8 +140,8 @@ const Profile = () => {
                 </div>
               )}
               <div>
-                <p className="text-white font-bold text-lg">{profile.company_name || 'Company Name'}</p>
-                <p className="text-purple-300 text-sm">{profile.tagline || 'Add a tagline above'}</p>
+                <p className="text-white font-bold text-lg">{profile.company_name || 'Your Company Name'}</p>
+                <p className="text-purple-300 text-sm">{profile.tagline || 'Your tagline here'}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
@@ -148,8 +153,6 @@ const Profile = () => {
           </div>
         </div>
 
-        </div>}
-        {/* Save Button */}
         <button onClick={handleSave} disabled={saving}
           className="w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-colors">
           {saved ? <><CheckCircle className="w-6 h-6" />Profile Saved!</> : saving ? 'Saving...' : <><Save className="w-6 h-6" />Save Profile</>}
