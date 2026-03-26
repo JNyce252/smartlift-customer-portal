@@ -95,6 +95,7 @@ const InternalDashboard = () => {
             { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
             { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },
             { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
+            { to: '/internal/profile', gradient: 'from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800', icon: Users, title: 'Profile', sub: 'Company settings' },
           ].map(({ to, gradient, icon: Icon, title, sub }) => (
             <Link key={to} to={to} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all`}>
               <Icon className="w-7 h-7 text-white mb-3" />
