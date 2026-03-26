@@ -1,29 +1,43 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Building2, MapPin, Star, Phone, Eye, LogOut, AlertCircle, Plus, CheckCircle } from 'lucide-react';
+import { Search, Building2, MapPin, LogOut, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 
+const BUILDING_TYPES = [
+  { label: 'Hotels', query: 'hotel' },
+  { label: 'Office Buildings', query: 'office building' },
+  { label: 'Apartments', query: 'apartment complex' },
+  { label: 'Hospitals', query: 'hospital' },
+  { label: 'Government', query: 'government building' },
+  { label: 'Shopping Centers', query: 'shopping mall' },
+  { label: 'Universities', query: 'university' },
+  { label: 'All Buildings', query: 'building' },
+];
+
 const LeadSearch = () => {
   const { user, logout } = useAuth();
-  const [mode, setMode] = useState('saved'); // 'saved' or 'discover'
+  const [mode, setMode] = useState('saved');
   const [prospects, setProspects] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [placeResults, setPlaceResults] = useState([]);
-  const [placeSearch, setPlaceSearch] = useState('');
-  const [placeCity, setPlaceCity] = useState('Dallas, TX');
-  const [placeLoading, setPlaceLoading] = useState(false);
-  const [importing, setImporting] = useState({});
-  const [imported, setImported] = useState({});
   const [urgencyFilter, setUrgencyFilter] = useState('all');
   const [cityFilter, setCityFilter] = useState('all');
   const [minScore, setMinScore] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Discover state
+  const [buildingName, setBuildingName] = useState('');
+  const [location, setLocation] = useState('');
+  const [selectedType, setSelectedType] = useState(BUILDING_TYPES[0]);
+  const [placeResults, setPlaceResults] = useState([]);
+  const [placeLoading, setPlaceLoading] = useState(false);
+  const [importing, setImporting] = useState({});
+  const [imported, setImported] = useState({});
 
   useEffect(() => {
     api.getProspects()
@@ -48,30 +62,54 @@ const LeadSearch = () => {
   const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
 
   const searchPlaces = async () => {
-    if (!placeSearch.trim()) return;
+    if (!location.trim()) { setError('Please enter a city or state'); return; }
     setPlaceLoading(true);
     setError(null);
+    setPlaceResults([]);
     try {
-      const query = encodeURIComponent(`${placeSearch} ${placeCity}`);
-      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${PLACES_KEY}`;
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+      // Build query — name + type + location
+      const typeQuery = selectedType.query;
+      const nameQuery = buildingName.trim();
+      const fullQuery = nameQuery ? `${nameQuery} ${typeQuery} near ${location}` : `${typeQuery} near ${location}`;
+
+      // First geocode the location to get coordinates for radius search
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${PLACES_KEY}`;
+      const geoProxy = `https://corsproxy.io/?${encodeURIComponent(geocodeUrl)}`;
+      const geoRes = await fetch(geoProxy);
+      const geoData = await geoRes.json();
+
+      let searchUrl;
+      if (geoData.results?.[0]?.geometry?.location) {
+        const { lat, lng } = geoData.results[0].geometry.location;
+        // 60 miles = ~96560 meters
+        const keyword = nameQuery || typeQuery;
+        searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=96560&keyword=${encodeURIComponent(keyword)}&key=${PLACES_KEY}`;
+      } else {
+        // Fallback to text search
+        searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(fullQuery)}&key=${PLACES_KEY}`;
+      }
+
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`;
       const res = await fetch(proxyUrl);
       const data = await res.json();
-      const places = (data.results || []).slice(0, 10).map(p => ({
+
+      const places = (data.results || []).slice(0, 20).map(p => ({
         google_place_id: p.place_id,
         name: p.name,
-        address: p.formatted_address,
-        city: p.formatted_address?.split(',')[1]?.trim() || placeCity,
+        address: p.formatted_address || p.vicinity,
+        city: (p.formatted_address || p.vicinity || '').split(',').slice(-3, -2)[0]?.trim() || location,
         state: 'TX',
         rating: p.rating,
         total_reviews: p.user_ratings_total,
-        type: 'hotel',
+        type: selectedType.query.split(' ')[0],
         lat: p.geometry?.location?.lat,
         lng: p.geometry?.location?.lng,
       }));
+
       setPlaceResults(places);
+      if (places.length === 0) setError('No results found — try a different search term or location');
     } catch (e) {
-      setError('Failed to search Google Places: ' + e.message);
+      setError('Search failed: ' + e.message);
     } finally {
       setPlaceLoading(false);
     }
@@ -80,7 +118,6 @@ const LeadSearch = () => {
   const importProspect = async (place) => {
     setImporting(prev => ({ ...prev, [place.google_place_id]: true }));
     try {
-      // Enrich with Places Details to get website, phone
       let enriched = { ...place };
       try {
         const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.google_place_id}&fields=website,formatted_phone_number&key=${PLACES_KEY}`;
@@ -92,7 +129,6 @@ const LeadSearch = () => {
       } catch {}
       await api.createProspect(enriched);
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
-      // Refresh saved prospects
       const updated = await api.getProspects();
       setProspects(updated);
       setFiltered(updated);
@@ -107,17 +143,8 @@ const LeadSearch = () => {
     }
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 80) return 'text-green-400 bg-green-500/20 border-green-500/30';
-    if (score >= 60) return 'text-amber-400 bg-amber-500/20 border-amber-500/30';
-    return 'text-red-400 bg-red-500/20 border-red-500/30';
-  };
-
-  const urgencyColors = {
-    high: 'text-red-400 bg-red-500/20 border-red-500/30',
-    medium: 'text-amber-400 bg-amber-500/20 border-amber-500/30',
-    low: 'text-green-400 bg-green-500/20 border-green-500/30',
-  };
+  const getScoreColor = (score) => score >= 80 ? 'text-green-400 bg-green-500/20 border-green-500/30' : score >= 60 ? 'text-amber-400 bg-amber-500/20 border-amber-500/30' : 'text-red-400 bg-red-500/20 border-red-500/30';
+  const urgencyColors = { high: 'text-red-400 bg-red-500/20 border-red-500/30', medium: 'text-amber-400 bg-amber-500/20 border-amber-500/30', low: 'text-green-400 bg-green-500/20 border-green-500/30' };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -139,7 +166,7 @@ const LeadSearch = () => {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-3xl font-bold text-white mb-2">AI-Powered Lead Search</h2>
             <p className="text-gray-400">Find elevator service opportunities</p>
@@ -158,59 +185,58 @@ const LeadSearch = () => {
 
         {error && (
           <div className="mb-6 bg-red-500/20 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400" /><p className="text-red-400">{error}</p>
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" /><p className="text-red-400">{error}</p>
           </div>
         )}
 
         {mode === 'saved' && (
           <>
-            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-6">
-              <div className="relative">
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-4">
+              <div className="relative mb-3">
                 <Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
-                <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search by name, city, or address..."
                   className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
               </div>
-            </div>
-            {/* Filters */}
-            <div className="flex gap-3 flex-wrap mb-4 items-center">
-              <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)}
-                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
-                <option value="all">All Urgency</option>
-                <option value="high">High Urgency</option>
-                <option value="medium">Medium Urgency</option>
-                <option value="low">Low Urgency</option>
-              </select>
-              <select value={cityFilter} onChange={e => setCityFilter(e.target.value)}
-                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
-                <option value="all">All Cities</option>
-                {cities.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
-                <option value="all">All Status</option>
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="proposal_sent">Proposal Sent</option>
-                <option value="won">Won</option>
-                <option value="lost">Lost</option>
-              </select>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-sm whitespace-nowrap">Min Score:</span>
-                <input type="number" value={minScore} onChange={e => setMinScore(Number(e.target.value))}
-                  min="0" max="100" placeholder="0"
-                  className="w-16 px-2 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+              <div className="flex gap-3 flex-wrap items-center">
+                <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                  <option value="all">All Urgency</option>
+                  <option value="high">High Urgency</option>
+                  <option value="medium">Medium Urgency</option>
+                  <option value="low">Low Urgency</option>
+                </select>
+                <select value={cityFilter} onChange={e => setCityFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                  <option value="all">All Cities</option>
+                  {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
+                  <option value="all">All Status</option>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="proposal_sent">Proposal Sent</option>
+                  <option value="won">Won</option>
+                  <option value="lost">Lost</option>
+                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-sm">Min Score:</span>
+                  <input type="number" value={minScore} onChange={e => setMinScore(Number(e.target.value))}
+                    min="0" max="100" placeholder="0"
+                    className="w-16 px-2 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                </div>
+                {activeFilters > 0 && (
+                  <button onClick={() => { setUrgencyFilter('all'); setCityFilter('all'); setMinScore(0); setStatusFilter('all'); }}
+                    className="px-3 py-2 bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/30">
+                    Clear ({activeFilters})
+                  </button>
+                )}
               </div>
-              {activeFilters > 0 && (
-                <button onClick={() => { setUrgencyFilter('all'); setCityFilter('all'); setMinScore(0); setStatusFilter('all'); }}
-                  className="px-3 py-2 bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-sm hover:bg-red-500/30">
-                  Clear Filters ({activeFilters})
-                </button>
-              )}
             </div>
             <p className="text-gray-400 text-sm mb-4">{filtered.length} of {prospects.length} prospects</p>
             <div className="space-y-4">
-              {filtered.map((prospect) => (
+              {filtered.map(prospect => (
                 <div key={prospect.id} className="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-purple-500 transition-colors">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-start gap-4">
@@ -226,15 +252,12 @@ const LeadSearch = () => {
                           <div className="flex items-center gap-2 mb-2">
                             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                             <span className="text-white">{prospect.rating}</span>
-                            {prospect.total_reviews && <span className="text-gray-400">({prospect.total_reviews} reviews)</span>}
+                            {prospect.total_reviews && <span className="text-gray-400">({prospect.total_reviews?.toLocaleString()} reviews)</span>}
                           </div>
                         )}
                         <div className="flex gap-2 flex-wrap">
                           <span className={`px-2 py-1 rounded text-xs border ${prospect.status === 'new' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>{prospect.status}</span>
-                          <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs">{prospect.type}</span>
-                          {prospect.service_urgency && (
-                            <span className={`px-2 py-1 rounded text-xs border ${urgencyColors[prospect.service_urgency] || ''}`}>{prospect.service_urgency} urgency</span>
-                          )}
+                          {prospect.service_urgency && <span className={`px-2 py-1 rounded text-xs border ${urgencyColors[prospect.service_urgency]}`}>{prospect.service_urgency} urgency</span>}
                         </div>
                       </div>
                     </div>
@@ -268,33 +291,46 @@ const LeadSearch = () => {
 
         {mode === 'discover' && (
           <>
-            <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
-              <h3 className="text-lg font-bold text-white mb-4">Search Google Places</h3>
-              <div className="flex gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
-                  <input type="text" value={placeSearch} onChange={(e) => setPlaceSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && searchPlaces()}
-                    placeholder="e.g. hotels, office buildings, apartments..."
-                    className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+            <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+              <h3 className="text-lg font-bold text-white mb-4">Search for Buildings</h3>
+
+              {/* Building type selector */}
+              <div className="flex gap-2 flex-wrap mb-4">
+                {BUILDING_TYPES.map(type => (
+                  <button key={type.query} onClick={() => setSelectedType(type)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedType.query === type.query ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-48">
+                  <Building2 className="absolute left-4 top-3.5 w-4 h-4 text-gray-400" />
+                  <input type="text" value={buildingName} onChange={e => setBuildingName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && searchPlaces()}
+                    placeholder="Building name (optional)..."
+                    className="w-full pl-11 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
                 </div>
-                <div className="relative w-48">
-                  <MapPin className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
-                  <input type="text" value={placeCity} onChange={(e) => setPlaceCity(e.target.value)}
-                    placeholder="City, State"
-                    className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+                <div className="relative flex-1 min-w-48">
+                  <MapPin className="absolute left-4 top-3.5 w-4 h-4 text-gray-400" />
+                  <input type="text" value={location} onChange={e => setLocation(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && searchPlaces()}
+                    placeholder="City or State (e.g. Dallas TX, Houston, Texas)..."
+                    className="w-full pl-11 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
                 </div>
-                <button onClick={searchPlaces} disabled={placeLoading}
-                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center gap-2">
+                <button onClick={searchPlaces} disabled={placeLoading || !location.trim()}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center gap-2 whitespace-nowrap">
                   <Search className="w-4 h-4" />{placeLoading ? 'Searching...' : 'Search'}
                 </button>
               </div>
+              <p className="text-gray-500 text-xs mt-3">Searches within 60 miles of the specified location</p>
             </div>
 
             <div className="space-y-4">
-              {placeResults.map((place) => (
+              {placeResults.map(place => (
                 <div key={place.google_place_id} className="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-purple-500 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4">
                       <div className="bg-blue-600/20 rounded-lg p-3 border border-blue-600/30">
                         <Building2 className="w-8 h-8 text-blue-400" />
@@ -313,28 +349,20 @@ const LeadSearch = () => {
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => importProspect(place)}
+                    <button onClick={() => importProspect(place)}
                       disabled={importing[place.google_place_id] || imported[place.google_place_id]}
-                      className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
-                        imported[place.google_place_id]
-                          ? 'bg-green-600/20 text-green-400 border border-green-600/30 cursor-default'
-                          : 'bg-purple-600 hover:bg-purple-700 text-white'
-                      }`}>
-                      {imported[place.google_place_id]
-                        ? <><CheckCircle className="w-4 h-4" />Imported</>
-                        : importing[place.google_place_id]
-                        ? 'Importing...'
-                        : <><Plus className="w-4 h-4" />Import</>}
+                      className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors flex-shrink-0 ${
+                        imported[place.google_place_id] ? 'bg-green-600/20 text-green-400 border border-green-600/30' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                      {imported[place.google_place_id] ? <><CheckCircle className="w-4 h-4" />Imported</> : importing[place.google_place_id] ? 'Importing...' : <><Plus className="w-4 h-4" />Import</>}
                     </button>
                   </div>
                 </div>
               ))}
               {placeResults.length === 0 && !placeLoading && (
                 <div className="text-center py-16">
-                  <Search className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                  <Building2 className="w-16 h-16 text-gray-600 mx-auto mb-4" />
                   <p className="text-gray-400 text-xl">Search for buildings to discover new leads</p>
-                  <p className="text-gray-500 mt-2">Try "hotels", "office towers", or "apartment complexes"</p>
+                  <p className="text-gray-500 mt-2">Select a building type, enter a location, and click Search</p>
                 </div>
               )}
             </div>
