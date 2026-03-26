@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle } from 'lucide-react';
+import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle, Settings } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
@@ -54,6 +54,9 @@ const InternalDashboard = () => {
                 <p className="text-sm font-medium text-white">{user?.name || 'Staff'}</p>
                 <p className="text-xs text-gray-400">{user?.email}</p>
               </div>
+              <Link to="/internal/profile" className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
+                <Settings className="w-4 h-4" /><span className="hidden sm:inline">Profile</span>
+              </Link>
               <button onClick={logout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
                 <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Logout</span>
               </button>

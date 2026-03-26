@@ -74,7 +74,8 @@ const Profile = () => {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+        {loading && <div className="text-center py-8"><p className="text-gray-400">Loading profile...</p></div>}
+        {!loading && <div className="mb-8">
           <h2 className="text-3xl font-bold text-white mb-2">Company Profile</h2>
           <p className="text-gray-400">This information is used in proposals, emails, and reports</p>
         </div>
@@ -134,8 +135,8 @@ const Profile = () => {
                 </div>
               )}
               <div>
-                <p className="text-white font-bold text-lg">{profile.company_name || 'Your Company Name'}</p>
-                <p className="text-purple-300 text-sm">{profile.tagline || 'Your tagline here'}</p>
+                <p className="text-white font-bold text-lg">{profile.company_name || 'Company Name'}</p>
+                <p className="text-purple-300 text-sm">{profile.tagline || 'Add a tagline above'}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
@@ -147,6 +148,7 @@ const Profile = () => {
           </div>
         </div>
 
+        </div>}
         {/* Save Button */}
         <button onClick={handleSave} disabled={saving}
           className="w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-colors">
