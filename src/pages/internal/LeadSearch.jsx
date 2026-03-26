@@ -67,47 +67,61 @@ const LeadSearch = () => {
     setError(null);
     setPlaceResults([]);
     try {
-      // Build query — name + type + location
       const typeQuery = selectedType.query;
       const nameQuery = buildingName.trim();
-      const fullQuery = nameQuery ? `${nameQuery} ${typeQuery} near ${location}` : `${typeQuery} near ${location}`;
 
-      // First geocode the location to get coordinates for radius search
+      // Geocode the location first
       const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${PLACES_KEY}`;
-      const geoProxy = `https://corsproxy.io/?${encodeURIComponent(geocodeUrl)}`;
-      const geoRes = await fetch(geoProxy);
+      const geoRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(geocodeUrl)}`);
       const geoData = await geoRes.json();
 
-      let searchUrl;
-      if (geoData.results?.[0]?.geometry?.location) {
-        const { lat, lng } = geoData.results[0].geometry.location;
-        // 60 miles = ~96560 meters
-        const keyword = nameQuery || typeQuery;
-        searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=96560&keyword=${encodeURIComponent(keyword)}&key=${PLACES_KEY}`;
-      } else {
-        // Fallback to text search
-        searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(fullQuery)}&key=${PLACES_KEY}`;
+      if (!geoData.results?.[0]?.geometry?.location) {
+        setError('Could not find that location — try adding a state, e.g. "Dallas, TX"');
+        setPlaceLoading(false);
+        return;
       }
 
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`;
-      const res = await fetch(proxyUrl);
-      const data = await res.json();
+      const { lat, lng } = geoData.results[0].geometry.location;
+      const keyword = nameQuery ? `${nameQuery} ${typeQuery}` : typeQuery;
 
-      const places = (data.results || []).slice(0, 20).map(p => ({
-        google_place_id: p.place_id,
-        name: p.name,
-        address: p.formatted_address || p.vicinity,
-        city: (p.formatted_address || p.vicinity || '').split(',').slice(-3, -2)[0]?.trim() || location,
-        state: 'TX',
-        rating: p.rating,
-        total_reviews: p.user_ratings_total,
-        type: selectedType.query.split(' ')[0],
-        lat: p.geometry?.location?.lat,
-        lng: p.geometry?.location?.lng,
-      }));
+      // Search with increasing radii — city first, then expand
+      const radii = [8047, 24140, 48280, 96560]; // 5mi, 15mi, 30mi, 60mi
+      let allResults = [];
 
-      setPlaceResults(places);
-      if (places.length === 0) setError('No results found — try a different search term or location');
+      for (const radius of radii) {
+        const searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(keyword)}&rankby=prominence&key=${PLACES_KEY}`;
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`);
+        const data = await res.json();
+        const results = data.results || [];
+
+        // Add new results not already found
+        for (const p of results) {
+          if (!allResults.find(r => r.google_place_id === p.place_id)) {
+            allResults.push({
+              google_place_id: p.place_id,
+              name: p.name,
+              address: p.formatted_address || p.vicinity,
+              city: (p.vicinity || '').split(',')[0]?.trim() || location,
+              state: geoData.results[0].address_components?.find(c => c.types.includes('administrative_area_level_1'))?.short_name || 'TX',
+              rating: p.rating,
+              total_reviews: p.user_ratings_total,
+              type: selectedType.query.split(' ')[0],
+              lat: p.geometry?.location?.lat,
+              lng: p.geometry?.location?.lng,
+              distance_meters: Math.round(Math.sqrt(
+                Math.pow((p.geometry?.location?.lat - lat) * 111000, 2) +
+                Math.pow((p.geometry?.location?.lng - lng) * 111000 * Math.cos(lat * Math.PI/180), 2)
+              ))
+            });
+          }
+        }
+        if (allResults.length >= 20) break;
+      }
+
+      // Sort by distance
+      allResults.sort((a, b) => a.distance_meters - b.distance_meters);
+      setPlaceResults(allResults.slice(0, 20));
+      if (allResults.length === 0) setError('No results found — try a different building type or location');
     } catch (e) {
       setError('Search failed: ' + e.message);
     } finally {
@@ -345,6 +359,7 @@ const LeadSearch = () => {
                             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                             <span className="text-white">{place.rating}</span>
                             {place.total_reviews && <span className="text-gray-400">({place.total_reviews?.toLocaleString()} reviews)</span>}
+                            {place.distance_meters && <span className="text-gray-500 text-xs">{(place.distance_meters / 1609).toFixed(1)} mi away</span>}
                           </div>
                         )}
                       </div>
