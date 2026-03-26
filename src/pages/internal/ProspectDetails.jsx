@@ -26,6 +26,11 @@ const ProspectDetails = () => {
   const [uploadedProposal, setUploadedProposal] = useState('');
   const [showUpload, setShowUpload] = useState(false);
   const [showSendEmail, setShowSendEmail] = useState(false);
+  const [showIntro, setShowIntro] = useState(false);
+  const [introContent, setIntroContent] = useState('');
+  const [introLoading, setIntroLoading] = useState(false);
+  const [introEmail, setIntroEmail] = useState('');
+  const [introName, setIntroName] = useState('');
   const [sendEmailTo, setSendEmailTo] = useState('');
   const [sendEmailName, setSendEmailName] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -267,6 +272,37 @@ const ProspectDetails = () => {
     const mailtoUrl = `mailto:${sendEmailTo}?subject=${subject}&body=${body}`;
     window.location.href = mailtoUrl;
     setShowSendEmail(false);
+  };
+
+  const generateIntro = async () => {
+    setIntroLoading(true);
+    setShowIntro(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const res = await fetch(`${BASE_URL}/prospects/${id}/intro-email`, { method: 'POST', headers });
+      const data = await res.json();
+      setIntroContent(data.content);
+      // Pre-fill email from first contact
+      if (contacts.length > 0 && !introEmail) {
+        setIntroEmail(contacts[0].email || '');
+        setIntroName(`${contacts[0].first_name || ''} ${contacts[0].last_name || ''}`.trim());
+      }
+    } catch (e) {
+      setIntroContent('Failed to generate: ' + e.message);
+    } finally {
+      setIntroLoading(false);
+    }
+  };
+
+  const sendIntroEmail = () => {
+    if (!introEmail.trim()) return;
+    // Extract subject from content
+    const subjectMatch = introContent.match(/Subject:\s*(.+)/);
+    const subject = subjectMatch ? subjectMatch[1].trim() : `Introduction — ${prospect.name}`;
+    const body = introContent.replace(/Subject:.+\n/, '').trim();
+    const mailtoUrl = `mailto:${introEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoUrl;
   };
 
   const printProposal = () => {
@@ -728,6 +764,7 @@ const ProspectDetails = () => {
             <div className="space-y-3 mt-4">
               {prospect.phone && <a href={`tel:${prospect.phone}`} className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Phone className="w-4 h-4" />Call Now</a>}
               <button onClick={() => setShowSchedule(true)} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Clock className="w-4 h-4" />Schedule Visit</button>
+              <button onClick={generateIntro} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Mail className="w-4 h-4" />Send Introduction Email</button>
               <button onClick={generateProposal} disabled={proposalLoading} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg flex items-center justify-center gap-2 font-medium"><Brain className="w-4 h-4" />{proposalLoading ? "Generating..." : "Generate Proposal"}</button>
             </div>
           </div>
@@ -793,6 +830,69 @@ const ProspectDetails = () => {
                     className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
                     <Clock className="w-4 h-4" />{scheduleLoading ? 'Scheduling...' : 'Confirm Visit'}
                   </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Intro Email Modal */}
+      {showIntro && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><Mail className="w-5 h-5 text-indigo-400" />Introduction Email</h2>
+                <p className="text-indigo-400 text-sm mt-0.5">{prospect.name} — {prospect.city}, {prospect.state}</p>
+              </div>
+              <button onClick={() => setShowIntro(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {introLoading ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <Brain className="w-12 h-12 text-indigo-400 animate-pulse mb-4" />
+                  <p className="text-white text-lg mb-2">Generating introduction email...</p>
+                  <p className="text-gray-400 text-sm">Personalizing based on company profile and completed projects</p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-gray-900 rounded-lg p-4 mb-4 text-sm text-gray-300 whitespace-pre-wrap font-mono border border-gray-700">{introContent}</div>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-gray-400 text-xs mb-1 block">Recipient Name</label>
+                        <input type="text" value={introName} onChange={e => setIntroName(e.target.value)}
+                          className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="text-gray-400 text-xs mb-1 block">Email Address</label>
+                        <input type="email" value={introEmail} onChange={e => setIntroEmail(e.target.value)}
+                          placeholder="contact@company.com"
+                          className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500" />
+                      </div>
+                    </div>
+                    {contacts.length > 0 && (
+                      <div>
+                        <p className="text-gray-500 text-xs mb-1">Saved contacts:</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {contacts.map(c => (
+                            <button key={c.id} onClick={() => { setIntroEmail(c.email); setIntroName(`${c.first_name || ''} ${c.last_name || ''}`.trim()); }}
+                              className={`px-3 py-1 rounded-lg text-xs transition-colors ${introEmail === c.email ? 'bg-indigo-600/30 text-indigo-400 border border-indigo-600/30' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                              {c.first_name} {c.last_name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <button onClick={() => navigator.clipboard.writeText(introContent)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Copy</button>
+                      <button onClick={sendIntroEmail} disabled={!introEmail.trim()}
+                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center justify-center gap-2">
+                        <Mail className="w-4 h-4" />Open in Email App
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
