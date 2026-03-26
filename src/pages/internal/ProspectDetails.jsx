@@ -253,27 +253,20 @@ const ProspectDetails = () => {
     }
   };
 
-  const sendProposalEmail = async () => {
+  const sendProposalEmail = () => {
     if (!sendEmailTo.trim()) return;
-    setSendingEmail(true);
-    try {
-      const token = localStorage.getItem('smartlift_token');
-      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      await fetch(`${BASE_URL}/prospects/${id}/send-proposal`, {
-        method: 'POST', headers,
-        body: JSON.stringify({
-          to_email: sendEmailTo,
-          to_name: sendEmailName,
-          content: proposal
-        })
-      });
-      setEmailSent(true);
-      setTimeout(() => { setShowSendEmail(false); setEmailSent(false); setSendEmailTo(''); setSendEmailName(''); }, 2000);
-    } catch (e) {
-      alert('Failed to send email: ' + e.message);
-    } finally {
-      setSendingEmail(false);
-    }
+    const subject = encodeURIComponent(`Elevator Service Proposal — ${prospect.name}`);
+    // Convert markdown to plain text for email
+    const plainText = (proposal || '').split('\n').map(line => {
+      if (line.startsWith('## ')) return '\n' + line.replace('## ', '').toUpperCase() + '\n' + '-'.repeat(40);
+      if (line.startsWith('# ')) return '\n' + line.replace('# ', '').toUpperCase() + '\n' + '='.repeat(40);
+      if (line.startsWith('- ')) return '  • ' + line.replace('- ', '');
+      return line;
+    }).join('\n');
+    const body = encodeURIComponent(plainText);
+    const mailtoUrl = `mailto:${sendEmailTo}?subject=${subject}&body=${body}`;
+    window.location.href = mailtoUrl;
+    setShowSendEmail(false);
   };
 
   const printProposal = () => {
@@ -849,10 +842,11 @@ const ProspectDetails = () => {
                       </div>
                     </div>
                   )}
-                  <button onClick={sendProposalEmail} disabled={sendingEmail || !sendEmailTo.trim()}
+                  <button onClick={sendProposalEmail} disabled={!sendEmailTo.trim()}
                     className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
-                    <Mail className="w-4 h-4" />{sendingEmail ? 'Sending...' : 'Send Proposal'}
+                    <Mail className="w-4 h-4" />Open in Email App
                   </button>
+                  <p className="text-gray-500 text-xs text-center">Opens your default email app pre-filled with the proposal</p>
                 </>
               )}
             </div>
