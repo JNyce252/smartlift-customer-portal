@@ -672,7 +672,10 @@ const ProspectDetails = () => {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-3xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-gray-700">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />AI-Generated Proposal</h2>
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2"><Brain className="w-5 h-5 text-purple-400" />AI-Generated Proposal</h2>
+                <p className="text-purple-400 text-sm mt-0.5">{prospect.name} — {prospect.city}, {prospect.state}</p>
+              </div>
               <div className="flex gap-3">
                 {proposal && (
                   <button onClick={() => navigator.clipboard.writeText(proposal)}
