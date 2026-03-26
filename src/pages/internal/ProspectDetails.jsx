@@ -25,6 +25,11 @@ const ProspectDetails = () => {
   const [improvingProposal, setImprovingProposal] = useState(false);
   const [uploadedProposal, setUploadedProposal] = useState('');
   const [showUpload, setShowUpload] = useState(false);
+  const [showSendEmail, setShowSendEmail] = useState(false);
+  const [sendEmailTo, setSendEmailTo] = useState('');
+  const [sendEmailName, setSendEmailName] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
@@ -245,6 +250,29 @@ const ProspectDetails = () => {
       alert('Failed to schedule: ' + e.message);
     } finally {
       setScheduleLoading(false);
+    }
+  };
+
+  const sendProposalEmail = async () => {
+    if (!sendEmailTo.trim()) return;
+    setSendingEmail(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/prospects/${id}/send-proposal`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          to_email: sendEmailTo,
+          to_name: sendEmailName,
+          content: proposal
+        })
+      });
+      setEmailSent(true);
+      setTimeout(() => { setShowSendEmail(false); setEmailSent(false); setSendEmailTo(''); setSendEmailName(''); }, 2000);
+    } catch (e) {
+      alert('Failed to send email: ' + e.message);
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -779,6 +807,59 @@ const ProspectDetails = () => {
         </div>
       )}
 
+      {/* Send Email Modal */}
+      {showSendEmail && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Mail className="w-5 h-5 text-green-400" />Send Proposal</h2>
+              <button onClick={() => setShowSendEmail(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              {emailSent ? (
+                <div className="text-center py-8">
+                  <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                  <p className="text-white font-bold text-lg">Proposal Sent!</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Recipient Name (optional)</label>
+                    <input type="text" value={sendEmailName} onChange={e => setSendEmailName(e.target.value)}
+                      placeholder="e.g. John Smith"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Email Address</label>
+                    <input type="email" value={sendEmailTo} onChange={e => setSendEmailTo(e.target.value)}
+                      placeholder="prospect@company.com"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                  {contacts.length > 0 && (
+                    <div>
+                      <p className="text-gray-400 text-xs mb-2">Or select a saved contact:</p>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {contacts.map(c => (
+                          <button key={c.id} onClick={() => { setSendEmailTo(c.email); setSendEmailName(`${c.first_name || ''} ${c.last_name || ''}`.trim()); }}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${sendEmailTo === c.email ? 'bg-green-600/20 border border-green-600/30 text-green-400' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                            {c.first_name} {c.last_name} — {c.email}
+                            {c.title && <span className="text-gray-500 ml-1">({c.title})</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button onClick={sendProposalEmail} disabled={sendingEmail || !sendEmailTo.trim()}
+                    className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                    <Mail className="w-4 h-4" />{sendingEmail ? 'Sending...' : 'Send Proposal'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload & Improve Modal */}
       {showUpload && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -832,6 +913,10 @@ const ProspectDetails = () => {
                     <button onClick={printProposal}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
                       Download PDF
+                    </button>
+                    <button onClick={() => setShowSendEmail(true)}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm">
+                      Send Email
                     </button>
                   </>
                 )}
