@@ -44,8 +44,8 @@ const InternalDashboard = () => {
               <div className="flex items-center gap-3">
                 <div className="bg-purple-600 rounded-lg p-2"><Building2 className="w-6 h-6 text-white" /></div>
                 <div>
-                  <h1 className="text-xl font-bold text-white">SmartLift</h1>
-                  <p className="text-xs text-gray-400">Internal Portal</p>
+                  <h1 className="text-xl font-bold text-white">Southwest Cabs</h1>
+                  <p className="text-xs text-gray-400">AI Powered Lead Search</p>
                 </div>
               </div>
             </div>
