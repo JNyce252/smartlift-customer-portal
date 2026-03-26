@@ -11,6 +11,7 @@ import CustomerManagement from './pages/internal/CustomerManagement';
 import Analytics from './pages/internal/Analytics';
 import RouteOptimizer from './pages/internal/RouteOptimizer';
 import TeamManagement from './pages/internal/TeamManagement';
+import Pipeline from './pages/internal/Pipeline';
 import CustomerDashboard from './pages/customer/CustomerDashboard';
 import MyElevators from './pages/customer/MyElevators';
 import ServiceRequest from './pages/customer/ServiceRequest';
