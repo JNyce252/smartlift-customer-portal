@@ -33,6 +33,8 @@ const LeadSearch = () => {
   // Discover state
   const [buildingName, setBuildingName] = useState('');
   const [location, setLocation] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedType, setSelectedType] = useState(BUILDING_TYPES[0]);
   const [placeResults, setPlaceResults] = useState([]);
   const [placeLoading, setPlaceLoading] = useState(false);
@@ -60,6 +62,17 @@ const LeadSearch = () => {
 
   const cities = [...new Set(prospects.map(p => p.city).filter(Boolean))].sort();
   const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
+
+  const fetchLocationSuggestions = async (input) => {
+    if (input.length < 2) { setLocationSuggestions([]); return; }
+    try {
+      const url = `https://corsproxy.io/?${encodeURIComponent(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=(cities)&components=country:us&key=${PLACES_KEY}`)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setLocationSuggestions(data.predictions || []);
+      setShowSuggestions(true);
+    } catch {}
+  };
 
   const searchPlaces = async () => {
     if (!location.trim()) { setError('Please enter a city or state'); return; }
@@ -329,17 +342,30 @@ const LeadSearch = () => {
                 </div>
                 <div className="relative flex-1 min-w-48">
                   <MapPin className="absolute left-4 top-3.5 w-4 h-4 text-gray-400" />
-                  <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && searchPlaces()}
-                    placeholder="City or State (e.g. Dallas TX, Houston, Texas)..."
+                  <input type="text" value={location}
+                    onChange={e => { setLocation(e.target.value); fetchLocationSuggestions(e.target.value); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { setShowSuggestions(false); searchPlaces(); } if (e.key === 'Escape') setShowSuggestions(false); }}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    onFocus={() => locationSuggestions.length > 0 && setShowSuggestions(true)}
+                    placeholder="City or State (e.g. Dallas TX, New York, Chicago)..."
                     className="w-full pl-11 pr-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+                  {showSuggestions && locationSuggestions.length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg overflow-hidden shadow-xl">
+                      {locationSuggestions.map(s => (
+                        <button key={s.place_id} onMouseDown={() => { setLocation(s.description); setShowSuggestions(false); setLocationSuggestions([]); }}
+                          className="w-full text-left px-4 py-3 text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-3 border-b border-gray-700 last:border-0">
+                          <MapPin className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />{s.description}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button onClick={searchPlaces} disabled={placeLoading || !location.trim()}
                   className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center gap-2 whitespace-nowrap">
                   <Search className="w-4 h-4" />{placeLoading ? 'Searching...' : 'Search'}
                 </button>
               </div>
-              <p className="text-gray-500 text-xs mt-3">Searches within 60 miles of the specified location</p>
+              <p className="text-gray-500 text-xs mt-3">Searches within 55 miles — works anywhere in the United States</p>
             </div>
 
             <div className="space-y-4">
