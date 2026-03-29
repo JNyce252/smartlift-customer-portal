@@ -308,7 +308,6 @@ const InternalDashboard = () => {
           </div>
         </div>
       </div>
-    </div>
 
       {/* Auto Prospect Modal */}
       {showAutoProspect && (
