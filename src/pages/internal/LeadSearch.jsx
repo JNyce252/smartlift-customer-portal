@@ -129,7 +129,7 @@ const LeadSearch = () => {
               name: p.name,
               address: p.formatted_address || p.vicinity,
               city: (p.vicinity || '').split(',')[0]?.trim() || location,
-              state: geoData.results[0].address_components?.find(c => c.types.includes('administrative_area_level_1'))?.short_name || 'TX',
+              state: geoResult?.address_components?.find(c => c.types.includes('administrative_area_level_1'))?.short_name || 'TX',
               rating: p.rating,
               total_reviews: p.user_ratings_total,
               type: selectedType.query.split(' ')[0],
