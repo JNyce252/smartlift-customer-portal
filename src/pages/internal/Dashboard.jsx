@@ -138,6 +138,73 @@ const InternalDashboard = () => {
     setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
   };
 
+  const runAutoProspect = async () => {
+    setAutoRunning(true);
+    setAutoDone(false);
+    const token = localStorage.getItem('smartlift_token');
+    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+    let totalImported = 0;
+    let totalSkipped = 0;
+    const total = TX_CITIES.length * TX_TYPES.length;
+    let current = 0;
+
+    for (const city of TX_CITIES) {
+      for (const type of TX_TYPES) {
+        current++;
+        setAutoProgress({ step: `Searching ${type.label} in ${city.split(',')[0]}...`, current, total, imported: totalImported, skipped: totalSkipped });
+        try {
+          if (!window.google) continue;
+          const geocoder = new window.google.maps.Geocoder();
+          const geoResult = await new Promise(resolve => {
+            geocoder.geocode({ address: city }, (results, status) => resolve(status === 'OK' ? results[0] : null));
+          });
+          if (!geoResult) continue;
+          const lat = geoResult.geometry.location.lat();
+          const lng = geoResult.geometry.location.lng();
+          const places = await new Promise(resolve => {
+            const mapDiv = document.createElement('div');
+            const map = new window.google.maps.Map(mapDiv);
+            const service = new window.google.maps.places.PlacesService(map);
+            service.nearbySearch({ location: { lat, lng }, radius: 48280, keyword: type.query }, (results, status) => {
+              resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? results || [] : []);
+            });
+          });
+          if (!places.length) continue;
+          const formatted = places.slice(0, 20).map(p => ({
+            google_place_id: p.place_id,
+            name: p.name,
+            address: p.formatted_address || p.vicinity,
+            city: city.split(',')[0],
+            state: 'TX',
+            rating: p.rating,
+            total_reviews: p.user_ratings_total,
+            type: type.query,
+            lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
+            lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
+          }));
+          setAutoProgress(prev => ({ ...prev, step: `AI scoring ${type.label} in ${city.split(',')[0]}...` }));
+          const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ results: formatted, buildingType: type.label, city: city.split(',')[0], state: 'TX' })
+          });
+          const aiData = await aiRes.json();
+          const highScorers = (aiData.results || []).filter(r => r.ai_score >= 70);
+          for (const place of highScorers) {
+            try {
+              const res = await fetch(`${BASE_URL}/prospects`, { method: 'POST', headers, body: JSON.stringify({ ...place, lead_score: place.ai_score }) });
+              if (res.ok) totalImported++; else totalSkipped++;
+            } catch { totalSkipped++; }
+          }
+          setAutoProgress(prev => ({ ...prev, imported: totalImported, skipped: totalSkipped }));
+          await new Promise(r => setTimeout(r, 500));
+        } catch (e) { console.error(e); }
+      }
+    }
+    setAutoRunning(false);
+    setAutoDone(true);
+    setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
@@ -306,6 +373,74 @@ const InternalDashboard = () => {
           </div>
         </div>
       </div>
+    </div>
+
+      {/* Auto Prospect Modal */}
+      {showAutoProspect && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-blue-500/30 w-full max-w-lg">
+            <div className="p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Search className="w-5 h-5 text-blue-400" />Find New Leads — Texas Auto-Prospect
+              </h2>
+              <p className="text-gray-400 text-sm mt-1">Searches 5 major Texas cities across 4 building types. AI filters and only imports leads scoring 70+.</p>
+            </div>
+            <div className="p-6">
+              {!autoRunning && !autoDone && (
+                <>
+                  <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
+                    <p className="text-gray-300 text-sm font-medium mb-2">Will search:</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-400">
+                      <div>Dallas, Houston, Austin,<br/>San Antonio, Fort Worth</div>
+                      <div>Hotels, Office Buildings,<br/>Hospitals, Apartments</div>
+                    </div>
+                    <p className="text-blue-400 text-xs mt-3">Only prospects scoring 70+ will be imported. Keep this tab open while running.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowAutoProspect(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Cancel</button>
+                    <button onClick={runAutoProspect} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                      <Search className="w-4 h-4" />Start Auto-Prospect
+                    </button>
+                  </div>
+                </>
+              )}
+              {autoRunning && (
+                <div className="space-y-4">
+                  <p className="text-blue-400 text-sm font-medium">{autoProgress.step}</p>
+                  <div className="w-full bg-gray-700 rounded-full h-3">
+                    <div className="bg-blue-500 h-3 rounded-full transition-all duration-500"
+                      style={{ width: autoProgress.total ? `${(autoProgress.current / autoProgress.total) * 100}%` : '0%' }} />
+                  </div>
+                  <p className="text-gray-400 text-xs">{autoProgress.current} of {autoProgress.total} searches complete</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-3 text-center">
+                      <p className="text-green-400 font-bold text-2xl">{autoProgress.imported}</p>
+                      <p className="text-gray-400 text-xs">Imported</p>
+                    </div>
+                    <div className="bg-gray-700/50 rounded-lg p-3 text-center">
+                      <p className="text-gray-300 font-bold text-2xl">{autoProgress.skipped}</p>
+                      <p className="text-gray-400 text-xs">Skipped</p>
+                    </div>
+                  </div>
+                  <p className="text-amber-400 text-xs text-center">Keep this tab open while running...</p>
+                </div>
+              )}
+              {autoDone && (
+                <div className="text-center py-4">
+                  <div className="text-5xl mb-4">🎯</div>
+                  <h3 className="text-white font-bold text-xl mb-2">Auto-Prospect Complete!</h3>
+                  <p className="text-green-400 text-lg font-bold mb-1">{autoProgress.imported} new leads imported</p>
+                  <p className="text-gray-400 text-sm mb-6">All scored 70+ by AI — ready for outreach</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowAutoProspect(false)} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Close</button>
+                    <Link to="/internal/leads" onClick={() => setShowAutoProspect(false)} className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium text-center">View Leads</Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
