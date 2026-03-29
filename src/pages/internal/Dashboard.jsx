@@ -138,72 +138,7 @@ const InternalDashboard = () => {
     setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
   };
 
-  const runAutoProspect = async () => {
-    setAutoRunning(true);
-    setAutoDone(false);
-    const token = localStorage.getItem('smartlift_token');
-    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-    let totalImported = 0;
-    let totalSkipped = 0;
-    const total = TX_CITIES.length * TX_TYPES.length;
-    let current = 0;
 
-    for (const city of TX_CITIES) {
-      for (const type of TX_TYPES) {
-        current++;
-        setAutoProgress({ step: `Searching ${type.label} in ${city.split(',')[0]}...`, current, total, imported: totalImported, skipped: totalSkipped });
-        try {
-          if (!window.google) continue;
-          const geocoder = new window.google.maps.Geocoder();
-          const geoResult = await new Promise(resolve => {
-            geocoder.geocode({ address: city }, (results, status) => resolve(status === 'OK' ? results[0] : null));
-          });
-          if (!geoResult) continue;
-          const lat = geoResult.geometry.location.lat();
-          const lng = geoResult.geometry.location.lng();
-          const places = await new Promise(resolve => {
-            const mapDiv = document.createElement('div');
-            const map = new window.google.maps.Map(mapDiv);
-            const service = new window.google.maps.places.PlacesService(map);
-            service.nearbySearch({ location: { lat, lng }, radius: 48280, keyword: type.query }, (results, status) => {
-              resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? results || [] : []);
-            });
-          });
-          if (!places.length) continue;
-          const formatted = places.slice(0, 20).map(p => ({
-            google_place_id: p.place_id,
-            name: p.name,
-            address: p.formatted_address || p.vicinity,
-            city: city.split(',')[0],
-            state: 'TX',
-            rating: p.rating,
-            total_reviews: p.user_ratings_total,
-            type: type.query,
-            lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
-            lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
-          }));
-          setAutoProgress(prev => ({ ...prev, step: `AI scoring ${type.label} in ${city.split(',')[0]}...` }));
-          const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ results: formatted, buildingType: type.label, city: city.split(',')[0], state: 'TX' })
-          });
-          const aiData = await aiRes.json();
-          const highScorers = (aiData.results || []).filter(r => r.ai_score >= 70);
-          for (const place of highScorers) {
-            try {
-              const res = await fetch(`${BASE_URL}/prospects`, { method: 'POST', headers, body: JSON.stringify({ ...place, lead_score: place.ai_score }) });
-              if (res.ok) totalImported++; else totalSkipped++;
-            } catch { totalSkipped++; }
-          }
-          setAutoProgress(prev => ({ ...prev, imported: totalImported, skipped: totalSkipped }));
-          await new Promise(r => setTimeout(r, 500));
-        } catch (e) { console.error(e); }
-      }
-    }
-    setAutoRunning(false);
-    setAutoDone(true);
-    setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
