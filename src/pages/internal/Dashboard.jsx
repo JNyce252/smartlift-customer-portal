@@ -4,6 +4,16 @@ import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu,
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
+const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY || 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
+const TX_CITIES = ['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX'];
+const TX_TYPES = [
+  { label: 'Hotels', query: 'hotel' },
+  { label: 'Office Buildings', query: 'office building' },
+  { label: 'Hospitals', query: 'hospital medical center' },
+  { label: 'Apartments', query: 'apartment complex' },
+];
+
 const InternalDashboard = () => {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
