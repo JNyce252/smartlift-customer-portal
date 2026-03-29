@@ -7,6 +7,10 @@ import { api } from '../../services/api';
 const InternalDashboard = () => {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showAutoProspect, setShowAutoProspect] = useState(false);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoProgress, setAutoProgress] = useState({ step: '', current: 0, total: 0, imported: 0, skipped: 0 });
+  const [autoDone, setAutoDone] = useState(false);
   const [prospects, setProspects] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -30,6 +34,98 @@ const InternalDashboard = () => {
     high: 'bg-red-500/20 text-red-400 border-red-500/30',
     medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     low: 'bg-green-500/20 text-green-400 border-green-500/30',
+  };
+
+  const runAutoProspect = async () => {
+    setAutoRunning(true);
+    setAutoDone(false);
+    const token = localStorage.getItem('smartlift_token');
+    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+    let totalImported = 0;
+    let totalSkipped = 0;
+    const total = TX_CITIES.length * TX_TYPES.length;
+    let current = 0;
+
+    for (const city of TX_CITIES) {
+      for (const type of TX_TYPES) {
+        current++;
+        setAutoProgress({ step: `Searching ${type.label} in ${city.split(',')[0]}...`, current, total, imported: totalImported, skipped: totalSkipped });
+
+        try {
+          // Geocode city
+          if (!window.google) continue;
+          const geocoder = new window.google.maps.Geocoder();
+          const geoResult = await new Promise(resolve => {
+            geocoder.geocode({ address: city }, (results, status) => {
+              resolve(status === 'OK' ? results[0] : null);
+            });
+          });
+          if (!geoResult) continue;
+
+          const lat = geoResult.geometry.location.lat();
+          const lng = geoResult.geometry.location.lng();
+
+          // Search places
+          const places = await new Promise(resolve => {
+            const mapDiv = document.createElement('div');
+            const map = new window.google.maps.Map(mapDiv);
+            const service = new window.google.maps.places.PlacesService(map);
+            service.nearbySearch({ location: { lat, lng }, radius: 48280, keyword: type.query }, (results, status) => {
+              resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? results || [] : []);
+            });
+          });
+
+          if (!places.length) continue;
+
+          // Format for AI scoring
+          const formatted = places.slice(0, 20).map(p => ({
+            google_place_id: p.place_id,
+            name: p.name,
+            address: p.formatted_address || p.vicinity,
+            city: city.split(',')[0],
+            state: 'TX',
+            rating: p.rating,
+            total_reviews: p.user_ratings_total,
+            type: type.query,
+            lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
+            lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
+          }));
+
+          setAutoProgress(prev => ({ ...prev, step: `AI scoring ${type.label} in ${city.split(',')[0]}...` }));
+
+          // AI score
+          const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ results: formatted, buildingType: type.label, city: city.split(',')[0], state: 'TX' })
+          });
+          const aiData = await aiRes.json();
+          const scored = aiData.results || [];
+          const highScorers = scored.filter(r => r.ai_score >= 70);
+
+          // Import high scorers
+          for (const place of highScorers) {
+            try {
+              const res = await fetch(`${BASE_URL}/prospects`, {
+                method: 'POST', headers,
+                body: JSON.stringify({ ...place, lead_score: place.ai_score })
+              });
+              if (res.ok) totalImported++;
+              else totalSkipped++;
+            } catch { totalSkipped++; }
+          }
+
+          setAutoProgress(prev => ({ ...prev, imported: totalImported, skipped: totalSkipped }));
+
+          // Small delay to avoid rate limiting
+          await new Promise(r => setTimeout(r, 500));
+
+        } catch (e) { console.error(e); }
+      }
+    }
+
+    setAutoRunning(false);
+    setAutoDone(true);
+    setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
   };
 
   return (
@@ -93,18 +189,26 @@ const InternalDashboard = () => {
         {/* Quick Actions */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
-            { to: '/internal/leads', gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Search, title: 'Find New Leads', sub: 'Discover prospects' },
+            { to: null, gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Search, title: 'Find New Leads', sub: 'Auto-prospect Texas' },
             { to: '/internal/customers', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: Users, title: 'Customers', sub: 'Manage accounts' },
             { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
             { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },
             { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
             { to: '/internal/profile', gradient: 'from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800', icon: Users, title: 'Profile', sub: 'Company settings' },
           ].map(({ to, gradient, icon: Icon, title, sub }) => (
-            <Link key={to} to={to} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all`}>
-              <Icon className="w-7 h-7 text-white mb-3" />
-              <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
-              <p className="text-white/70 text-sm">{sub}</p>
-            </Link>
+            to ? (
+              <Link key={title} to={to} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all cursor-pointer`}>
+                <Icon className="w-7 h-7 text-white mb-3" />
+                <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
+                <p className="text-white/70 text-sm">{sub}</p>
+              </Link>
+            ) : (
+              <button key={title} onClick={() => { setShowAutoProspect(true); setAutoDone(false); setAutoProgress({ step: '', current: 0, total: 0, imported: 0, skipped: 0 }); }} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all text-left w-full`}>
+                <Icon className="w-7 h-7 text-white mb-3" />
+                <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
+                <p className="text-white/70 text-sm">{sub}</p>
+              </button>
+            )
           ))}
         </div>
 
