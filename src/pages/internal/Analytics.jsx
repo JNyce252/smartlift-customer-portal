@@ -13,6 +13,7 @@ const Analytics = () => {
   const [invoices, setInvoices] = useState([]);
   const [prospects, setProspects] = useState([]);
   const [tdlrStats, setTdlrStats] = useState(null);
+  const [contractStats, setContractStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,13 +26,15 @@ const Analytics = () => {
       api.getInvoices(),
       api.getProspects(),
       fetch(`${BASE_URL}/analytics/tdlr`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${BASE_URL}/analytics/contracts`, { headers }).then(r => r.json()).catch(() => null),
     ])
-    .then(([c, t, i, p, td]) => {
+    .then(([c, t, i, p, td, cs]) => {
       setCustomers(c);
       setTickets(t);
       setInvoices(i);
       setProspects(p);
       setTdlrStats(td);
+      setContractStats(cs);
     })
     .catch(console.error)
     .finally(() => setLoading(false));
@@ -58,6 +61,9 @@ const Analytics = () => {
   };
 
   const totalRevenue = invoices.reduce((sum, i) => sum + parseFloat(i.total || 0), 0);
+  const contractRevenue = parseFloat(contractStats?.total_annual_revenue || 0);
+  const activeContracts = parseInt(contractStats?.active_contracts || 0);
+  const expiringSoon = parseInt(contractStats?.expiring_soon || 0);
   const paidRevenue = invoices.filter(i => i.status === 'paid').reduce((sum, i) => sum + parseFloat(i.total || 0), 0);
   const completedTickets = tickets.filter(t => t.status === 'completed').length;
   const completionRate = tickets.length ? ((completedTickets / tickets.length) * 100).toFixed(1) : 0;

@@ -19,6 +19,10 @@ const Pipeline = () => {
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(null);
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [pendingWonProspect, setPendingWonProspect] = useState(null);
+  const [contract, setContract] = useState({ annual_value: '', monthly_value: '', start_date: '', term_months: '12', elevators_under_contract: '', service_frequency: 'monthly', notes: '' });
+  const [savingContract, setSavingContract] = useState(false);
   const [dragOver, setDragOver] = useState(null);
 
   useEffect(() => {
@@ -77,6 +81,31 @@ const Pipeline = () => {
   const totalPipelineValue = prospects
     .filter(p => !['lost'].includes(p.status))
     .reduce((sum, p) => sum + ((p.estimated_elevators || 3) * 8000), 0);
+
+  const saveContract = async () => {
+    if (!pendingWonProspect) return;
+    setSavingContract(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/contracts`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          prospect_id: pendingWonProspect.id,
+          company_name: pendingWonProspect.name,
+          ...contract,
+          annual_value: contract.annual_value || (contract.monthly_value ? contract.monthly_value * 12 : 0),
+          monthly_value: contract.monthly_value || (contract.annual_value ? contract.annual_value / 12 : 0),
+        })
+      });
+      setShowContractModal(false);
+      setPendingWonProspect(null);
+    } catch (e) {
+      alert('Failed to save contract: ' + e.message);
+    } finally {
+      setSavingContract(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -207,6 +236,85 @@ const Pipeline = () => {
           </div>
         )}
       </div>
+    </div>
+
+      {/* Contract Modal */}
+      {showContractModal && pendingWonProspect && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-green-500/30 w-full max-w-lg">
+            <div className="p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                🎉 Deal Won — Record Contract
+              </h2>
+              <p className="text-green-400 text-sm mt-1">{pendingWonProspect.name}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Annual Value ($)</label>
+                  <input type="number" value={contract.annual_value} onChange={e => setContract(p => ({...p, annual_value: e.target.value, monthly_value: e.target.value ? (e.target.value/12).toFixed(2) : ''}))}
+                    placeholder="32000"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Monthly Value ($)</label>
+                  <input type="number" value={contract.monthly_value} onChange={e => setContract(p => ({...p, monthly_value: e.target.value, annual_value: e.target.value ? (e.target.value*12).toFixed(2) : ''}))}
+                    placeholder="2667"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Start Date</label>
+                  <input type="date" value={contract.start_date} onChange={e => setContract(p => ({...p, start_date: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Term (months)</label>
+                  <select value={contract.term_months} onChange={e => setContract(p => ({...p, term_months: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500">
+                    <option value="6">6 months</option>
+                    <option value="12">12 months</option>
+                    <option value="24">24 months</option>
+                    <option value="36">36 months</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Elevators Under Contract</label>
+                  <input type="number" value={contract.elevators_under_contract} onChange={e => setContract(p => ({...p, elevators_under_contract: e.target.value}))}
+                    placeholder="4"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Service Frequency</label>
+                  <select value={contract.service_frequency} onChange={e => setContract(p => ({...p, service_frequency: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="biannual">Bi-Annual</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Contract Notes</label>
+                <textarea value={contract.notes} onChange={e => setContract(p => ({...p, notes: e.target.value}))}
+                  placeholder="Any special terms, scope details, or notes..."
+                  rows={2}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500 resize-none" />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setShowContractModal(false); setPendingWonProspect(null); }}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
+                  Skip for Now
+                </button>
+                <button onClick={saveContract} disabled={savingContract}
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium">
+                  {savingContract ? 'Saving...' : 'Save Contract'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
