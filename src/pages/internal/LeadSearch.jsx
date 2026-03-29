@@ -119,11 +119,10 @@ const LeadSearch = () => {
               rating: p.rating,
               total_reviews: p.user_ratings_total,
               type: selectedType.query.split(' ')[0],
-              lat: p.geometry?.location?.lat,
-              lng: p.geometry?.location?.lng,
+              lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
+              lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
               distance_meters: Math.round(Math.sqrt(
-                Math.pow((p.geometry?.location?.lat - lat) * 111000, 2) +
-                Math.pow((p.geometry?.location?.lng - lng) * 111000 * Math.cos(lat * Math.PI/180), 2)
+                Math.pow(((typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat) - lat) * 111000, 2) + Math.pow(((typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng) - lng) * 111000 * Math.cos(lat * Math.PI/180), 2)
               ))
             });
           }
