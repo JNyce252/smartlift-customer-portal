@@ -37,6 +37,26 @@ const Analytics = () => {
     .finally(() => setLoading(false));
   }, []);
 
+  const [rescoring, setRescoring] = useState(false);
+  const [rescoreMsg, setRescoreMsg] = useState('');
+
+  const triggerRescore = async () => {
+    setRescoring(true);
+    setRescoreMsg('');
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/ai/rescore-all`, { method: 'POST', headers });
+      setRescoreMsg('AI rescoring started — scores will update in ~2 minutes');
+      setTimeout(() => setRescoreMsg(''), 5000);
+    } catch {
+      setRescoreMsg('Rescore triggered — check back in 2 minutes');
+      setTimeout(() => setRescoreMsg(''), 5000);
+    } finally {
+      setRescoring(false);
+    }
+  };
+
   const totalRevenue = invoices.reduce((sum, i) => sum + parseFloat(i.total || 0), 0);
   const paidRevenue = invoices.filter(i => i.status === 'paid').reduce((sum, i) => sum + parseFloat(i.total || 0), 0);
   const completedTickets = tickets.filter(t => t.status === 'completed').length;
@@ -92,7 +112,7 @@ const Analytics = () => {
         {/* Top Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard icon={DollarSign} iconColor="text-green-400" label="Total Revenue" value={`$${totalRevenue.toLocaleString('en', {maximumFractionDigits:0})}`} sub={`Paid: $${paidRevenue.toLocaleString('en', {maximumFractionDigits:0})}`} badge="Live" />
-          <StatCard icon={Users} iconColor="text-blue-400" label="Active Customers" value={customers.length} badge="Live" />
+          <StatCard icon={Users} iconColor="text-blue-400" label="Active Customers" value={customers.filter(c => !c.archived && c.account_status === "active").length} badge="Live" />
           <StatCard icon={Clock} iconColor="text-amber-400" label="Open Tickets" value={tickets.filter(t => t.status === 'open').length} sub={`${completionRate}% completion rate`} />
           <StatCard icon={Brain} iconColor="text-purple-400" label="Lead Pipeline Value" value={`$${(pipelineValue/1000).toFixed(0)}K`} sub={`${prospects.length} prospects`} badge="AI" />
         </div>
@@ -102,6 +122,10 @@ const Analytics = () => {
           <h3 className="text-white font-bold text-lg mb-5 flex items-center gap-2">
             <Brain className="w-5 h-5 text-purple-400" />AI Lead Intelligence
           </h3>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-white">Customer Health</h2>
+            <p className="text-gray-400 text-sm">Active contracts and service activity</p>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {[
               ['Avg Lead Score', avgLeadScore, avgLeadScore >= 80 ? 'text-green-400' : 'text-amber-400'],
