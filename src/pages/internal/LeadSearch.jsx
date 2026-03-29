@@ -63,15 +63,23 @@ const LeadSearch = () => {
   const cities = [...new Set(prospects.map(p => p.city).filter(Boolean))].sort();
   const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
 
-  const fetchLocationSuggestions = async (input) => {
+  const fetchLocationSuggestions = (input) => {
     if (input.length < 2) { setLocationSuggestions([]); return; }
+    if (!window.google) return;
     try {
-      const url = `https://corsproxy.io/?${encodeURIComponent(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=(cities)&components=country:us&key=${PLACES_KEY}`)}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      setLocationSuggestions(data.predictions || []);
-      setShowSuggestions(true);
-    } catch {}
+      const service = new window.google.maps.places.AutocompleteService();
+      service.getPlacePredictions(
+        { input, types: ['(cities)'], componentRestrictions: { country: 'us' } },
+        (predictions, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setLocationSuggestions(predictions);
+            setShowSuggestions(true);
+          } else {
+            setLocationSuggestions([]);
+          }
+        }
+      );
+    } catch(e) { console.error(e); }
   };
 
   const searchPlaces = async () => {
@@ -83,18 +91,24 @@ const LeadSearch = () => {
       const typeQuery = selectedType.query;
       const nameQuery = buildingName.trim();
 
-      // Geocode the location first
-      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${PLACES_KEY}`;
-      const geoRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(geocodeUrl)}`);
-      const geoData = await geoRes.json();
+      // Geocode using Google Maps SDK
+      if (!window.google) { setError('Maps not loaded yet — please refresh the page'); setPlaceLoading(false); return; }
+      const geocoder = new window.google.maps.Geocoder();
+      const geoResult = await new Promise((resolve) => {
+        geocoder.geocode({ address: location }, (results, status) => {
+          if (status === 'OK' && results?.[0]) resolve(results[0]);
+          else resolve(null);
+        });
+      });
 
-      if (!geoData.results?.[0]?.geometry?.location) {
+      if (!geoResult) {
         setError('Could not find that location — try adding a state, e.g. "Dallas, TX"');
         setPlaceLoading(false);
         return;
       }
 
-      const { lat, lng } = geoData.results[0].geometry.location;
+      const lat = geoResult.geometry.location.lat();
+      const lng = geoResult.geometry.location.lng();
       const keyword = nameQuery ? `${nameQuery} ${typeQuery}` : typeQuery;
 
       // Search with increasing radii — city first, then expand
