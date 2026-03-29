@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink } from 'lucide-react';
+import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
