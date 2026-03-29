@@ -44,6 +44,24 @@ const Pipeline = () => {
       body: JSON.stringify({ status: newStatus })
     });
     setProspects(prev => prev.map(p => p.id === prospectId ? { ...p, status: newStatus } : p));
+
+    // Show contract modal when moved to Won
+    if (newStatus === 'won') {
+      const prospect = prospects.find(p => p.id === prospectId);
+      if (prospect) {
+        setPendingWonProspect(prospect);
+        setContract({
+          annual_value: prospect.estimated_annual_value || '',
+          monthly_value: '',
+          start_date: new Date().toISOString().split('T')[0],
+          term_months: '12',
+          elevators_under_contract: prospect.estimated_elevators || '',
+          service_frequency: 'monthly',
+          notes: ''
+        });
+        setShowContractModal(true);
+      }
+    }
   };
 
   const handleDragStart = (e, prospect) => {
