@@ -116,10 +116,14 @@ const LeadSearch = () => {
       let allResults = [];
 
       for (const radius of radii) {
-        const searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&keyword=${encodeURIComponent(keyword)}&rankby=prominence&key=${PLACES_KEY}`;
-        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(searchUrl)}`);
-        const data = await res.json();
-        const results = data.results || [];
+        const results = await new Promise((resolve) => {
+          const mapDiv = document.createElement('div');
+          const map = new window.google.maps.Map(mapDiv);
+          const service = new window.google.maps.places.PlacesService(map);
+          service.nearbySearch({ location: { lat, lng }, radius, keyword }, (r, status) => {
+            resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? r || [] : []);
+          });
+        });
 
         // Add new results not already found
         for (const p of results) {
@@ -161,12 +165,16 @@ const LeadSearch = () => {
     try {
       let enriched = { ...place };
       try {
-        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.google_place_id}&fields=website,formatted_phone_number&key=${PLACES_KEY}`;
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(detailsUrl)}`;
-        const res = await fetch(proxyUrl);
-        const data = await res.json();
-        if (data.result?.website) enriched.website = data.result.website;
-        if (data.result?.formatted_phone_number) enriched.phone = data.result.formatted_phone_number;
+        const details = await new Promise((resolve) => {
+          const mapDiv = document.createElement('div');
+          const map = new window.google.maps.Map(mapDiv);
+          const service = new window.google.maps.places.PlacesService(map);
+          service.getDetails({ placeId: place.google_place_id, fields: ['website','formatted_phone_number'] }, (r, status) => {
+            resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? r || {} : {});
+          });
+        });
+        if (details.website) enriched.website = details.website;
+        if (details.formatted_phone_number) enriched.phone = details.formatted_phone_number;
       } catch {}
       await api.createProspect(enriched);
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
