@@ -236,7 +236,6 @@ const Pipeline = () => {
           </div>
         )}
       </div>
-    </div>
 
       {/* Contract Modal */}
       {showContractModal && pendingWonProspect && (
