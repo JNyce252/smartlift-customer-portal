@@ -37,6 +37,7 @@ const LeadSearch = () => {
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [aiScoring, setAiScoring] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedType, setSelectedType] = useState(BUILDING_TYPES[0]);
   const [placeResults, setPlaceResults] = useState([]);
   const [placeLoading, setPlaceLoading] = useState(false);
@@ -64,6 +65,16 @@ const LeadSearch = () => {
 
   const cities = [...new Set(prospects.map(p => p.city).filter(Boolean))].sort();
   const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
+
+  const archiveProspect = async (id) => {
+    const token = localStorage.getItem('smartlift_token');
+    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+    await fetch(`${BASE_URL}/prospects/${id}/archive`, {
+      method: 'PATCH', headers,
+      body: JSON.stringify({ archived: true })
+    });
+    setProspects(prev => prev.filter(p => p.id !== id));
+  };
 
   const fetchLocationSuggestions = (input) => {
     if (input.length < 2) { setLocationSuggestions([]); return; }
@@ -359,6 +370,10 @@ const LeadSearch = () => {
                         <Phone className="w-4 h-4" />Call
                       </a>
                     )}
+                    <button onClick={() => archiveProspect(prospect.id)}
+                      className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm">
+                      Archive
+                    </button>
                   </div>
                 </div>
               ))}
