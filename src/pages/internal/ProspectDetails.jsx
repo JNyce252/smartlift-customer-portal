@@ -27,6 +27,10 @@ const ProspectDetails = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [showSendEmail, setShowSendEmail] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
+  const [contract, setContract] = useState(null);
+  const [showContractForm, setShowContractForm] = useState(false);
+  const [contractForm, setContractForm] = useState({ annual_value: '', monthly_value: '', start_date: '', term_months: '12', elevators_under_contract: '', service_frequency: 'monthly', notes: '' });
+  const [savingContract, setSavingContract] = useState(false);
   const [introContent, setIntroContent] = useState('');
   const [introLoading, setIntroLoading] = useState(false);
   const [introEmail, setIntroEmail] = useState('');
@@ -55,8 +59,10 @@ const ProspectDetails = () => {
       fetch(`${BASE_URL}/prospects/${id}/tdlr`, { headers }).then(r => r.json()).catch(() => null),
       fetch(`${BASE_URL}/prospects/${id}/contacts`, { headers }).then(r => r.json()).catch(() => []),
       fetch(`${BASE_URL}/prospects/${id}/notes`, { headers }).then(r => r.json()).catch(() => []),
+      fetch(`${BASE_URL}/prospects/${id}/contracts`, { headers }).then(r => r.json()).catch(() => null),
     ])
-    .then(([p, t, c, n]) => {
+    .then(([p, t, c, n, ct]) => {
+      setContract(ct);
       setNotes(Array.isArray(n) ? n : []);
       setProspect(p);
       setTdlr(t);
@@ -272,6 +278,33 @@ const ProspectDetails = () => {
     const mailtoUrl = `mailto:${sendEmailTo}?subject=${subject}&body=${body}`;
     window.location.href = mailtoUrl;
     setShowSendEmail(false);
+  };
+
+  const saveContract = async () => {
+    setSavingContract(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const annual = contractForm.annual_value || (contractForm.monthly_value ? contractForm.monthly_value * 12 : 0);
+      const monthly = contractForm.monthly_value || (contractForm.annual_value ? contractForm.annual_value / 12 : 0);
+      const res = await fetch(`${BASE_URL}/contracts`, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          prospect_id: id,
+          company_name: prospect.name,
+          ...contractForm,
+          annual_value: annual,
+          monthly_value: monthly,
+        })
+      });
+      const saved = await res.json();
+      setContract(saved);
+      setShowContractForm(false);
+    } catch (e) {
+      alert('Failed to save contract: ' + e.message);
+    } finally {
+      setSavingContract(false);
+    }
   };
 
   const generateIntro = async () => {
@@ -658,7 +691,134 @@ const ProspectDetails = () => {
           )}
         </div>
 
-        {/* Notes Section */}
+        {/* Contract Section */}
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-bold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-green-400" />Service Contract
+            </h3>
+            <button onClick={() => { setShowContractForm(!showContractForm); if (contract) setContractForm({ annual_value: contract.annual_value || '', monthly_value: contract.monthly_value || '', start_date: contract.start_date?.split('T')[0] || '', term_months: contract.term_months || '12', elevators_under_contract: contract.elevators_under_contract || '', service_frequency: contract.service_frequency || 'monthly', notes: contract.notes || '' }); }}
+              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm flex items-center gap-1.5">
+              {contract ? 'Edit Contract' : '+ Add Contract'}
+            </button>
+          </div>
+
+          {contract && !showContractForm && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">Annual Value</p>
+                <p className="text-green-400 font-bold text-xl">${parseFloat(contract.annual_value || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">Monthly Value</p>
+                <p className="text-white font-bold text-xl">${parseFloat(contract.monthly_value || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">Elevators</p>
+                <p className="text-purple-400 font-bold text-xl">{contract.elevators_under_contract || 'N/A'}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">Start Date</p>
+                <p className="text-white text-sm">{contract.start_date ? new Date(contract.start_date).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">End Date</p>
+                <p className="text-white text-sm">{contract.end_date ? new Date(contract.end_date).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div className="bg-gray-700/50 rounded-lg p-4">
+                <p className="text-gray-400 text-xs mb-1">Service Frequency</p>
+                <p className="text-white text-sm capitalize">{contract.service_frequency || 'N/A'}</p>
+              </div>
+              {contract.notes && (
+                <div className="col-span-2 md:col-span-3 bg-gray-700/50 rounded-lg p-4">
+                  <p className="text-gray-400 text-xs mb-1">Notes</p>
+                  <p className="text-gray-300 text-sm">{contract.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!contract && !showContractForm && (
+            <div className="text-center py-6 border border-dashed border-gray-600 rounded-lg">
+              <p className="text-gray-400 text-sm">No contract recorded yet</p>
+              <p className="text-gray-500 text-xs mt-1">Add contract details when a deal is closed</p>
+            </div>
+          )}
+
+          {showContractForm && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Annual Value ($)</label>
+                  <input type="number" value={contractForm.annual_value}
+                    onChange={e => setContractForm(p => ({...p, annual_value: e.target.value, monthly_value: e.target.value ? (e.target.value/12).toFixed(2) : ''}))}
+                    placeholder="32000"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Monthly Value ($)</label>
+                  <input type="number" value={contractForm.monthly_value}
+                    onChange={e => setContractForm(p => ({...p, monthly_value: e.target.value, annual_value: e.target.value ? (e.target.value*12).toFixed(2) : ''}))}
+                    placeholder="2667"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Start Date</label>
+                  <input type="date" value={contractForm.start_date}
+                    onChange={e => setContractForm(p => ({...p, start_date: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Term (months)</label>
+                  <select value={contractForm.term_months}
+                    onChange={e => setContractForm(p => ({...p, term_months: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500">
+                    <option value="6">6 months</option>
+                    <option value="12">12 months</option>
+                    <option value="24">24 months</option>
+                    <option value="36">36 months</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Elevators Under Contract</label>
+                  <input type="number" value={contractForm.elevators_under_contract}
+                    onChange={e => setContractForm(p => ({...p, elevators_under_contract: e.target.value}))}
+                    placeholder="4"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Service Frequency</label>
+                  <select value={contractForm.service_frequency}
+                    onChange={e => setContractForm(p => ({...p, service_frequency: e.target.value}))}
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="biannual">Bi-Annual</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">Notes</label>
+                <textarea value={contractForm.notes}
+                  onChange={e => setContractForm(p => ({...p, notes: e.target.value}))}
+                  placeholder="Special terms, scope details..."
+                  rows={2}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-green-500 resize-none" />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowContractForm(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Cancel</button>
+                <button onClick={saveContract} disabled={savingContract}
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium">
+                  {savingContract ? 'Saving...' : 'Save Contract'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+                {/* Notes Section */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 mb-6">
           <h3 className="text-white font-bold mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5 text-purple-400" />Staff Notes
