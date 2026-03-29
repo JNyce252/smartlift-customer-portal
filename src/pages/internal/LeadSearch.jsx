@@ -4,6 +4,7 @@ import { Search, Building2, MapPin, LogOut, AlertCircle, Plus, CheckCircle, Star
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 
 const BUILDING_TYPES = [
@@ -35,6 +36,7 @@ const LeadSearch = () => {
   const [location, setLocation] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [aiScoring, setAiScoring] = useState(false);
   const [selectedType, setSelectedType] = useState(BUILDING_TYPES[0]);
   const [placeResults, setPlaceResults] = useState([]);
   const [placeLoading, setPlaceLoading] = useState(false);
@@ -148,11 +150,43 @@ const LeadSearch = () => {
         if (allResults.length >= 20) break;
       }
 
-      // Sort by distance, filter out tiny properties (likely no elevators)
-      allResults.sort((a, b) => a.distance_meters - b.distance_meters);
-      const filtered = allResults.filter(p => !p.total_reviews || p.total_reviews >= 50);
-      setPlaceResults(filtered.slice(0, 20));
-      if (allResults.length === 0) setError('No results found — try a different building type or location');
+      if (allResults.length === 0) {
+        setError('No results found — try a different building type or location');
+        return;
+      }
+
+      // Send to AI for scoring and filtering
+      setAiScoring(true);
+      const cityName = location.split(',')[0].trim();
+      const stateName = location.split(',')[1]?.trim() || 'TX';
+
+      try {
+        const token = localStorage.getItem('smartlift_token');
+        const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+        const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            results: allResults.slice(0, 20),
+            buildingType: selectedType.label,
+            city: cityName,
+            state: stateName
+          })
+        });
+        const aiData = await aiRes.json();
+        if (aiData.results?.length) {
+          setPlaceResults(aiData.results);
+        } else {
+          // Fallback to original results if AI fails
+          allResults.sort((a, b) => a.distance_meters - b.distance_meters);
+          setPlaceResults(allResults.slice(0, 20));
+        }
+      } catch {
+        // Fallback to original results if AI fails
+        allResults.sort((a, b) => a.distance_meters - b.distance_meters);
+        setPlaceResults(allResults.slice(0, 20));
+      } finally {
+        setAiScoring(false);
+      }
     } catch (e) {
       setError('Search failed: ' + e.message);
     } finally {
@@ -383,7 +417,7 @@ const LeadSearch = () => {
                 </div>
                 <button onClick={searchPlaces} disabled={placeLoading || !location.trim()}
                   className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center gap-2 whitespace-nowrap">
-                  <Search className="w-4 h-4" />{placeLoading ? 'Searching...' : 'Search'}
+                  <Search className="w-4 h-4" />{aiScoring ? 'AI Scoring...' : placeLoading ? 'Searching...' : 'Search'}
                 </button>
               </div>
               <p className="text-gray-500 text-xs mt-3">Searches within 55 miles — works anywhere in the United States</p>
@@ -407,6 +441,12 @@ const LeadSearch = () => {
                             <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                             <span className="text-white">{place.rating}</span>
                             {place.total_reviews && <span className="text-gray-400">({place.total_reviews?.toLocaleString()} reviews)</span>}
+                            {place.ai_score && (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${place.ai_score >= 80 ? 'bg-green-900/40 text-green-400' : place.ai_score >= 60 ? 'bg-yellow-900/40 text-yellow-400' : 'bg-gray-700 text-gray-400'}`}>
+                                AI {place.ai_score}
+                              </span>
+                            )}
+                            {place.ai_reason && <span className="text-purple-400 text-xs italic">— {place.ai_reason}</span>}
                             {place.distance_meters && <span className="text-gray-500 text-xs">{(place.distance_meters / 1609).toFixed(1)} mi away</span>}
                           </div>
                         )}
