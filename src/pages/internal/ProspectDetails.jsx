@@ -816,7 +816,44 @@ const ProspectDetails = () => {
           )}
         </div>
 
-        {/* Contract Section */}
+        {/* LinkedIn Search */}
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-bold flex items-center gap-2">
+              <ExternalLink className="w-5 h-5 text-blue-400" />LinkedIn Search
+              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded text-xs font-normal">Google</span>
+            </h3>
+            <button onClick={searchLinkedIn} disabled={linkedinLoading}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
+              <Search className="w-4 h-4" />{linkedinLoading ? 'Searching...' : 'Search LinkedIn'}
+            </button>
+          </div>
+          {linkedinError && <p className="text-red-400 text-sm mb-3">{linkedinError}</p>}
+          {linkedinResults.length > 0 ? (
+            <div className="space-y-3">
+              {linkedinResults.map((r, i) => (
+                <div key={i} className="flex items-center justify-between bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                  <div>
+                    <p className="text-white font-medium">{r.name}</p>
+                    {r.title && <p className="text-gray-400 text-sm">{r.title}</p>}
+                    <p className="text-gray-500 text-xs mt-1 line-clamp-2">{r.snippet}</p>
+                  </div>
+                  <a href={r.url} target="_blank" rel="noreferrer"
+                    className="ml-4 px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1 shrink-0">
+                    <ExternalLink className="w-3.5 h-3.5" />View Profile
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 border border-dashed border-gray-600 rounded-lg">
+              <p className="text-gray-400 text-sm">Search LinkedIn for decision makers at this company</p>
+              <p className="text-gray-500 text-xs mt-1">Uses Google Custom Search — 100 free searches/day</p>
+            </div>
+          )}
+        </div>
+
+                {/* Contract Section */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-bold flex items-center gap-2">
