@@ -143,12 +143,28 @@ const InternalDashboard = () => {
           const scored = aiData.results || [];
           const highScorers = scored.filter(r => r.ai_score >= 70);
 
-          // Import high scorers
+          // Import high scorers with website and phone fetch
           for (const place of highScorers) {
             try {
+              let enriched = { ...place, lead_score: place.ai_score };
+              try {
+                const details = await new Promise(resolve => {
+                  const mapDiv = document.createElement('div');
+                  const map = new window.google.maps.Map(mapDiv);
+                  const service = new window.google.maps.places.PlacesService(map);
+                  service.getDetails({
+                    placeId: place.google_place_id,
+                    fields: ['website', 'formatted_phone_number']
+                  }, (result, status) => {
+                    resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? result : {});
+                  });
+                });
+                if (details.website) enriched.website = details.website;
+                if (details.formatted_phone_number) enriched.phone = details.formatted_phone_number;
+              } catch {}
               const res = await fetch(`${BASE_URL}/prospects`, {
                 method: 'POST', headers,
-                body: JSON.stringify({ ...place, lead_score: place.ai_score })
+                body: JSON.stringify(enriched)
               });
               if (res.ok) totalImported++;
               else totalSkipped++;
