@@ -17,6 +17,9 @@ const ProspectDetails = () => {
   const [tdlrExpanded, setTdlrExpanded] = useState(false);
   const [hunterLoading, setHunterLoading] = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
+  const [linkedinResults, setLinkedinResults] = useState([]);
+  const [linkedinLoading, setLinkedinLoading] = useState(false);
+  const [linkedinError, setLinkedinError] = useState(null);
   const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '', title: '', phone: '', linkedin_url: '' });
   const [savingContact, setSavingContact] = useState(false);
   const [hunterDomain, setHunterDomain] = useState('');
@@ -325,6 +328,32 @@ const ProspectDetails = () => {
       alert('Failed to save contract: ' + e.message);
     } finally {
       setSavingContract(false);
+    }
+  };
+
+  const searchLinkedIn = async () => {
+    if (!prospect?.name) return;
+    setLinkedinLoading(true);
+    setLinkedinError(null);
+    setLinkedinResults([]);
+    try {
+      const query = encodeURIComponent(\`site:linkedin.com/in "\${prospect.name}" facilities manager OR property manager OR building manager OR director OR president OR owner\`);
+      const url = \`https://www.googleapis.com/customsearch/v1?key=\${GOOGLE_CSE_KEY}&cx=\${GOOGLE_CSE_ID}&q=\${query}&num=10\`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) { setLinkedinError(data.error.message); return; }
+      const results = (data.items || []).map(item => ({
+        name: item.title.split(' - ')[0].split(' | ')[0],
+        title: item.title.split(' - ')[1] || item.snippet?.split(' - ')[0] || '',
+        url: item.link,
+        snippet: item.snippet
+      }));
+      setLinkedinResults(results);
+      if (!results.length) setLinkedinError('No LinkedIn profiles found for this company.');
+    } catch(e) {
+      setLinkedinError('LinkedIn search failed: ' + e.message);
+    } finally {
+      setLinkedinLoading(false);
     }
   };
 
