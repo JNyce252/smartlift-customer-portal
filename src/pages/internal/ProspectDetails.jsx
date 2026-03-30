@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const HUNTER_KEY = process.env.REACT_APP_HUNTER_API_KEY;
+const GOOGLE_CSE_KEY = 'AIzaSyAeyv6UlP9Pw6k9nXRE3KDAge6EE4dbygg';
+const GOOGLE_CSE_ID = '21ba7a2cd02dc4459';
 
 const ProspectDetails = () => {
   const { id } = useParams();
