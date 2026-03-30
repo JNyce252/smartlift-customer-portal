@@ -69,7 +69,25 @@ const ProspectDetails = () => {
       setContacts(Array.isArray(c) ? c : []);
 
       if (p.website) {
-        try { setHunterDomain(new URL(p.website).hostname.replace('www.', '')); } catch {}
+        try { 
+          const domain = new URL(p.website).hostname.replace('www.', '');
+          setHunterDomain(domain);
+        } catch {}
+      } else if (p.name) {
+        // Try to guess domain from known brands
+        const knownDomains = {
+          'hyatt': 'hyatt.com', 'marriott': 'marriott.com', 'hilton': 'hilton.com',
+          'westin': 'marriott.com', 'sheraton': 'marriott.com', 'omni': 'omnihotels.com',
+          'four seasons': 'fourseasons.com', 'intercontinental': 'ihg.com',
+          'holiday inn': 'ihg.com', 'doubletree': 'hilton.com', 'courtyard': 'marriott.com',
+          'hampton inn': 'hilton.com', 'best western': 'bestwestern.com',
+          'drury': 'druryhotels.com', 'at&t': 'att.com', 'methodist': 'methodisthealth.com',
+          'st. david': 'stdavids.com', 'baylor': 'bswhealth.com',
+        };
+        const nameLower = p.name.toLowerCase();
+        for (const [key, val] of Object.entries(knownDomains)) {
+          if (nameLower.includes(key)) { setHunterDomain(val); break; }
+        }
       }
     })
     .catch(e => setError(e.message))
