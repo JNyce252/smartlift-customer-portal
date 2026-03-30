@@ -750,7 +750,9 @@ const ProspectDetails = () => {
                     <div>
                       <p className="text-white font-medium">{c.first_name || ''} {c.last_name || ''}</p>
                       {c.title && <p className="text-gray-400 text-sm">{c.title}</p>}
-                      <p className="text-purple-400 text-sm">{c.email}</p>
+                      {c.email && <p className="text-purple-400 text-sm">{c.email}</p>}
+                      {c.phone && <p className="text-blue-400 text-sm">{c.phone}</p>}
+                      {c.source === 'manual' && <span className="text-xs px-1.5 py-0.5 bg-gray-600 text-gray-400 rounded">Manual</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
