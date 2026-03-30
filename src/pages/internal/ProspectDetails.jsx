@@ -339,7 +339,7 @@ const ProspectDetails = () => {
     setLinkedinError(null);
     setLinkedinResults([]);
     try {
-      const query = encodeURIComponent(`site:linkedin.com/in "${prospect.name}" facilities manager OR property manager OR building manager OR director OR president OR owner`);
+      const query = encodeURIComponent(`"${prospect.name}" linkedin facilities manager OR property manager OR building director OR president OR owner elevator`);
       const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_CSE_KEY}&cx=${GOOGLE_CSE_ID}&q=${query}&num=10`;
       const res = await fetch(url);
       const data = await res.json();
