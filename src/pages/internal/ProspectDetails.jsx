@@ -16,6 +16,9 @@ const ProspectDetails = () => {
   const [error, setError] = useState(null);
   const [tdlrExpanded, setTdlrExpanded] = useState(false);
   const [hunterLoading, setHunterLoading] = useState(false);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContact, setNewContact] = useState({ first_name: '', last_name: '', email: '', title: '', phone: '', linkedin_url: '' });
+  const [savingContact, setSavingContact] = useState(false);
   const [hunterDomain, setHunterDomain] = useState('');
   const [hunterError, setHunterError] = useState(null);
   const [autoSearched, setAutoSearched] = useState(false);
@@ -323,6 +326,33 @@ const ProspectDetails = () => {
     } finally {
       setSavingContract(false);
     }
+  };
+
+  const saveManualContact = async () => {
+    if (!newContact.email && !newContact.first_name) return;
+    setSavingContact(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      const r = await fetch(`${BASE_URL}/prospects/${id}/contacts`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ ...newContact, source: 'manual', confidence: 100 })
+      });
+      const saved = await r.json();
+      setContacts(prev => [...prev, saved]);
+      setNewContact({ first_name: '', last_name: '', email: '', title: '', phone: '', linkedin_url: '' });
+      setShowAddContact(false);
+    } catch (e) { alert('Failed to save contact: ' + e.message); }
+    finally { setSavingContact(false); }
+  };
+
+  const deleteContact = async (contactId) => {
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+      await fetch(`${BASE_URL}/prospects/${id}/contacts/${contactId}`, { method: 'DELETE', headers });
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+    } catch (e) { alert('Failed to delete contact'); }
   };
 
   const generateIntro = async () => {
@@ -667,6 +697,48 @@ const ProspectDetails = () => {
 
           {hunterError && <p className="text-red-400 text-sm mb-4">{hunterError}</p>}
 
+          {/* Manual Add Contact */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddContact(!showAddContact)}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5" />Add Manually
+            </button>
+          </div>
+
+          {showAddContact && (
+            <div className="bg-gray-700/50 rounded-lg p-4 mb-4 border border-gray-600">
+              <p className="text-gray-300 text-sm font-medium mb-3">Add Contact Manually</p>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <input type="text" placeholder="First Name" value={newContact.first_name}
+                  onChange={e => setNewContact(p => ({...p, first_name: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                <input type="text" placeholder="Last Name" value={newContact.last_name}
+                  onChange={e => setNewContact(p => ({...p, last_name: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                <input type="email" placeholder="Email Address" value={newContact.email}
+                  onChange={e => setNewContact(p => ({...p, email: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                <input type="text" placeholder="Job Title" value={newContact.title}
+                  onChange={e => setNewContact(p => ({...p, title: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                <input type="text" placeholder="Phone Number" value={newContact.phone}
+                  onChange={e => setNewContact(p => ({...p, phone: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                <input type="text" placeholder="LinkedIn URL" value={newContact.linkedin_url}
+                  onChange={e => setNewContact(p => ({...p, linkedin_url: e.target.value}))}
+                  className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowAddContact(false)}
+                  className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-sm">Cancel</button>
+                <button onClick={saveManualContact} disabled={savingContact}
+                  className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
+                  {savingContact ? 'Saving...' : 'Save Contact'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {contacts.length > 0 ? (
             <div className="space-y-3">
               {contacts.map((c, i) => (
@@ -696,6 +768,8 @@ const ProspectDetails = () => {
                         <ExternalLink className="w-3.5 h-3.5" />LinkedIn
                       </a>
                     )}
+                    <button onClick={() => deleteContact(c.id)}
+                      className="px-2 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg text-xs">✕</button>
                   </div>
                 </div>
               ))}
