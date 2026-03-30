@@ -18,6 +18,10 @@ const InternalDashboard = () => {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showAutoProspect, setShowAutoProspect] = useState(false);
+  const [customCities, setCustomCities] = useState(['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX']);
+  const [newCity, setNewCity] = useState('');
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const [autoRunning, setAutoRunning] = useState(false);
   const [autoProgress, setAutoProgress] = useState({ step: '', current: 0, total: 0, imported: 0, skipped: 0 });
   const [autoDone, setAutoDone] = useState(false);
@@ -46,6 +50,33 @@ const InternalDashboard = () => {
     low: 'bg-green-500/20 text-green-400 border-green-500/30',
   };
 
+  const fetchCitySuggestions = (input) => {
+    if (input.length < 2) { setCitySuggestions([]); return; }
+    if (!window.google) return;
+    const service = new window.google.maps.places.AutocompleteService();
+    service.getPlacePredictions(
+      { input, types: ['(cities)'], componentRestrictions: { country: 'us' } },
+      (predictions, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+          setCitySuggestions(predictions);
+          setShowCitySuggestions(true);
+        }
+      }
+    );
+  };
+
+  const addCity = (cityName) => {
+    const clean = cityName.replace(', USA', '');
+    if (!customCities.includes(clean)) {
+      setCustomCities(prev => [...prev, clean]);
+    }
+    setNewCity('');
+    setCitySuggestions([]);
+    setShowCitySuggestions(false);
+  };
+
+  const removeCity = (city) => setCustomCities(prev => prev.filter(c => c !== city));
+
   const runAutoProspect = async () => {
     setAutoRunning(true);
     setAutoDone(false);
@@ -56,7 +87,7 @@ const InternalDashboard = () => {
     const total = TX_CITIES.length * TX_TYPES.length;
     let current = 0;
 
-    for (const city of TX_CITIES) {
+    for (const city of customCities) {
       for (const type of TX_TYPES) {
         current++;
         setAutoProgress({ step: `Searching ${type.label} in ${city.split(',')[0]}...`, current, total, imported: totalImported, skipped: totalSkipped });
@@ -322,18 +353,46 @@ const InternalDashboard = () => {
             <div className="p-6">
               {!autoRunning && !autoDone && (
                 <>
-                  <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
-                    <p className="text-gray-300 text-sm font-medium mb-2">Will search:</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-400">
-                      <div>Dallas, Houston, Austin,<br/>San Antonio, Fort Worth</div>
-                      <div>Hotels, Office Buildings,<br/>Hospitals, Apartments</div>
+                  <div className="mb-4">
+                    <p className="text-gray-300 text-sm font-medium mb-2">Cities to search:</p>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {customCities.map(city => (
+                        <span key={city} className="flex items-center gap-1 px-3 py-1 bg-blue-600/20 border border-blue-600/30 text-blue-400 rounded-full text-xs font-medium">
+                          {city}
+                          <button onClick={() => removeCity(city)} className="text-blue-400 hover:text-red-400 ml-1">×</button>
+                        </span>
+                      ))}
                     </div>
-                    <p className="text-blue-400 text-xs mt-3">Only prospects scoring 70+ will be imported. Keep this tab open while running.</p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={newCity}
+                        onChange={e => { setNewCity(e.target.value); fetchCitySuggestions(e.target.value); }}
+                        onBlur={() => setTimeout(() => setShowCitySuggestions(false), 150)}
+                        placeholder="Add a city (e.g. Chicago, IL)..."
+                        className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                      />
+                      {showCitySuggestions && citySuggestions.length > 0 && (
+                        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg overflow-hidden shadow-xl">
+                          {citySuggestions.map(s => (
+                            <button key={s.place_id} onMouseDown={() => addCity(s.description)}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 border-b border-gray-700 last:border-0">
+                              {s.description.replace(', USA', '')}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-gray-700/50 rounded-lg p-3 mb-4">
+                    <p className="text-gray-400 text-xs">Building types: Hotels, Office Buildings, Hospitals, Apartments</p>
+                    <p className="text-blue-400 text-xs mt-1">Only prospects scoring 70+ will be imported. Keep this tab open while running.</p>
                   </div>
                   <div className="flex gap-3">
                     <button onClick={() => setShowAutoProspect(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Cancel</button>
-                    <button onClick={runAutoProspect} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                      <Search className="w-4 h-4" />Start Auto-Prospect
+                    <button onClick={runAutoProspect} disabled={customCities.length === 0}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                      <Search className="w-4 h-4" />Start Auto-Prospect ({customCities.length} cities)
                     </button>
                   </div>
                 </>
