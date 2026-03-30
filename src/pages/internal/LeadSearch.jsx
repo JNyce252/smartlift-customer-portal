@@ -21,6 +21,7 @@ const BUILDING_TYPES = [
 const LeadSearch = () => {
   const { user, logout } = useAuth();
   const [mode, setMode] = useState('saved');
+  const [lastRefresh, setLastRefresh] = useState(0);
   const [prospects, setProspects] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
@@ -44,7 +45,7 @@ const LeadSearch = () => {
   const [importing, setImporting] = useState({});
   const [imported, setImported] = useState({});
 
-  useEffect(() => {
+  useEffect(() => {{
     api.getProspects()
       .then(data => { setProspects(data); setFiltered(data); })
       .catch(e => setError(e.message))
@@ -266,7 +267,7 @@ const LeadSearch = () => {
             <p className="text-gray-400">Find elevator service opportunities</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setMode('saved')}
+            <button onClick={() => { setMode('saved'); setLastRefresh(Date.now()); }}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${mode === 'saved' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}>
               Saved ({prospects.length})
             </button>
