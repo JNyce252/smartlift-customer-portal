@@ -341,32 +341,15 @@ const ProspectDetails = () => {
     setLinkedinError(null);
     setLinkedinResults([]);
     try {
-      const res = await fetch('https://api.peopledatalabs.com/v5/person/search', {
+      const token = localStorage.getItem('smartlift_token');
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/people-search`, {
         method: 'POST',
-        headers: { 'X-Api-Key': PDL_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: {
-            bool: {
-              must: [{ match: { job_company_name: prospect.name } }],
-              should: [
-                { terms: { job_title_role: ['facilities', 'operations', 'management', 'engineering'] } },
-                { terms: { job_title_levels: ['director', 'vp', 'owner', 'c_suite', 'manager'] } }
-              ]
-            }
-          },
-          size: 10
-        })
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({ company_name: prospect.name })
       });
       const data = await res.json();
-      if (!data.data?.length) { setLinkedinError('No contacts found for this company.'); return; }
-      const results = data.data.map(p => ({
-        name: p.full_name ? p.full_name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : '',
-        title: p.job_title || '',
-        linkedin_url: p.linkedin_url ? 'https://' + p.linkedin_url : null,
-        email: p.work_email || p.emails?.[0]?.address || null,
-        location: p.location_name || ''
-      }));
-      setLinkedinResults(results);
+      if (!data.results?.length) { setLinkedinError('No contacts found for this company.'); return; }
+      setLinkedinResults(data.results);
     } catch(e) {
       setLinkedinError('Search failed: ' + e.message);
     } finally {
