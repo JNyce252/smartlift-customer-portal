@@ -212,13 +212,27 @@ const Pipeline = () => {
                   
                   {/* Column Header */}
                   <div className="p-4 border-b border-gray-700/50">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-1">
                       <h3 className="text-white font-bold">{col.label}</h3>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${col.badge}`}>{colProspects.length}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${col.badge}`}>{colProspects.length}</span>
+                        {col.id !== 'won' && col.id !== 'lost' && colProspects.length > 0 && (
+                          <button onClick={() => clearColumn(col.id)}
+                            title="Clear column — move all to Lost"
+                            className="text-gray-500 hover:text-red-400 text-xs px-1">✕ Clear</button>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-gray-500 text-xs mt-1">
+                    <p className="text-gray-500 text-xs mb-2">
                       ${colProspects.reduce((sum, p) => sum + ((p.estimated_elevators || 3) * 8000), 0).toLocaleString()} potential
                     </p>
+                    <input
+                      type="text"
+                      placeholder="Filter..."
+                      value={columnFilters[col.id] || ''}
+                      onChange={e => setColumnFilters(prev => ({ ...prev, [col.id]: e.target.value }))}
+                      className="w-full px-2 py-1 bg-gray-900/50 border border-gray-700 rounded text-gray-300 text-xs placeholder-gray-600 focus:outline-none focus:border-gray-500"
+                    />
                   </div>
 
                   {/* Cards */}
