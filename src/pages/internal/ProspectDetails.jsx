@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const HUNTER_KEY = process.env.REACT_APP_HUNTER_API_KEY;
 const GOOGLE_CSE_KEY = 'AIzaSyAeyv6UlP9Pw6k9nXRE3KDAge6EE4dbygg';
+const PDL_KEY = 'a8ea15492d7ae5057cf8d92b6044c5ec5ec175fb515cc76df10a19881ab427f6';
 const GOOGLE_CSE_ID = '21ba7a2cd02dc4459';
 
 const ProspectDetails = () => {
@@ -816,37 +817,62 @@ const ProspectDetails = () => {
           )}
         </div>
 
-        {/* LinkedIn Search */}
+        {/* People Intelligence */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-bold flex items-center gap-2">
-              <ExternalLink className="w-5 h-5 text-blue-400" />LinkedIn Search
+              <User className="w-5 h-5 text-blue-400" />People Intelligence
+              <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 rounded text-xs font-normal">People Data Labs</span>
             </h3>
+            <button onClick={searchLinkedIn} disabled={linkedinLoading}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
+              <Search className="w-4 h-4" />{linkedinLoading ? 'Searching...' : 'Find Decision Makers'}
+            </button>
           </div>
-          <p className="text-gray-400 text-sm mb-4">Search LinkedIn for decision makers at this company. Click a button to open Google search results in a new tab.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <a href={`https://www.google.com/search?q=site:linkedin.com/in+"${encodeURIComponent(prospect?.name || '')}"+"facilities manager"`}
-              target="_blank" rel="noreferrer"
-              className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/30 text-blue-400 rounded-lg text-sm text-center flex items-center justify-center gap-2">
-              <ExternalLink className="w-4 h-4" />Facilities Manager
-            </a>
-            <a href={`https://www.google.com/search?q=site:linkedin.com/in+"${encodeURIComponent(prospect?.name || '')}"+"property manager"`}
-              target="_blank" rel="noreferrer"
-              className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/30 text-blue-400 rounded-lg text-sm text-center flex items-center justify-center gap-2">
-              <ExternalLink className="w-4 h-4" />Property Manager
-            </a>
-            <a href={`https://www.google.com/search?q=site:linkedin.com/in+"${encodeURIComponent(prospect?.name || '')}"+"director"`}
-              target="_blank" rel="noreferrer"
-              className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/30 text-blue-400 rounded-lg text-sm text-center flex items-center justify-center gap-2">
-              <ExternalLink className="w-4 h-4" />Director
-            </a>
-            <a href={`https://www.google.com/search?q=site:linkedin.com/in+"${encodeURIComponent(prospect?.name || '')}"+"president OR owner OR CEO"`}
-              target="_blank" rel="noreferrer"
-              className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/30 text-blue-400 rounded-lg text-sm text-center flex items-center justify-center gap-2">
-              <ExternalLink className="w-4 h-4" />President / Owner
-            </a>
-          </div>
-          <p className="text-gray-500 text-xs mt-3 text-center">Opens Google search filtered to LinkedIn profiles — find contacts then add them manually above</p>
+
+          {linkedinError && <p className="text-amber-400 text-sm mb-3">{linkedinError}</p>}
+
+          {linkedinResults.length > 0 ? (
+            <div className="space-y-3">
+              {linkedinResults.map((r, i) => (
+                <div key={i} className="flex items-center justify-between bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-600/20 rounded-full border border-blue-600/30 flex items-center justify-center">
+                      <User className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{r.name}</p>
+                      {r.title && <p className="text-gray-400 text-sm">{r.title}</p>}
+                      {r.location && <p className="text-gray-500 text-xs">{r.location}</p>}
+                      {r.email && <p className="text-purple-400 text-sm">{r.email}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {r.email && (
+                      <a href={`mailto:${r.email}`} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1">
+                        <Mail className="w-3.5 h-3.5" />Email
+                      </a>
+                    )}
+                    {r.linkedin_url && (
+                      <a href={r.linkedin_url} target="_blank" rel="noreferrer"
+                        className="px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1">
+                        <ExternalLink className="w-3.5 h-3.5" />LinkedIn
+                      </a>
+                    )}
+                    <button onClick={() => {
+                      setNewContact({ first_name: r.name.split(' ')[0] || '', last_name: r.name.split(' ').slice(1).join(' ') || '', email: r.email || '', title: r.title || '', phone: '', linkedin_url: r.linkedin_url || '' });
+                      setShowAddContact(true);
+                    }} className="px-2 py-1.5 bg-green-900/30 hover:bg-green-900/50 text-green-400 rounded-lg text-xs">+ Save</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 border border-dashed border-gray-600 rounded-lg">
+              <p className="text-gray-400 text-sm">Find decision makers at this company</p>
+              <p className="text-gray-500 text-xs mt-1">Returns names, titles, LinkedIn profiles, and emails where available</p>
+            </div>
+          )}
         </div>
 
                 {/* Contract Section */}
