@@ -4,7 +4,6 @@ import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Cloc
 import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
-const HUNTER_KEY = process.env.REACT_APP_HUNTER_API_KEY;
 const GOOGLE_CSE_KEY = 'AIzaSyAeyv6UlP9Pw6k9nXRE3KDAge6EE4dbygg';
 const GOOGLE_CSE_ID = '21ba7a2cd02dc4459';
 
@@ -135,7 +134,10 @@ const ProspectDetails = () => {
       const autoSearch = async () => {
         setHunterLoading(true);
         try {
-          const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${HUNTER_KEY}&limit=10`);
+          const token = localStorage.getItem('smartlift_token');
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${domain}`, {
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) }
+      });
           const data = await res.json();
           if (!data.data?.emails?.length) return;
           const token = localStorage.getItem('smartlift_token');
@@ -163,7 +165,10 @@ const ProspectDetails = () => {
     setHunterLoading(true);
     setHunterError(null);
     try {
-      const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${hunterDomain}&api_key=${HUNTER_KEY}&limit=10`);
+      const token2 = localStorage.getItem('smartlift_token');
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${hunterDomain}`, {
+        headers: { ...(token2 && { Authorization: `Bearer ${token2}` }) }
+      });
       const data = await res.json();
       if (data.errors) { setHunterError(data.errors[0]?.details || 'Hunter.io error'); return; }
 
