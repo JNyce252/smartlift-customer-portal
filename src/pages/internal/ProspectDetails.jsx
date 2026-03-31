@@ -340,21 +340,34 @@ const ProspectDetails = () => {
     setLinkedinError(null);
     setLinkedinResults([]);
     try {
-      const query = encodeURIComponent(`"${prospect.name}" linkedin facilities manager OR property manager OR building director OR president OR owner elevator`);
-      const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_CSE_KEY}&cx=${GOOGLE_CSE_ID}&q=${query}&num=10`;
-      const res = await fetch(url);
+      const res = await fetch('https://api.peopledatalabs.com/v5/person/search', {
+        method: 'POST',
+        headers: { 'X-Api-Key': PDL_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: {
+            bool: {
+              must: [{ match: { job_company_name: prospect.name } }],
+              should: [
+                { terms: { job_title_role: ['facilities', 'operations', 'management', 'engineering'] } },
+                { terms: { job_title_levels: ['director', 'vp', 'owner', 'c_suite', 'manager'] } }
+              ]
+            }
+          },
+          size: 10
+        })
+      });
       const data = await res.json();
-      if (data.error) { setLinkedinError(data.error.message); return; }
-      const results = (data.items || []).map(item => ({
-        name: item.title.split(' - ')[0].split(' | ')[0],
-        title: item.title.split(' - ')[1] || item.snippet?.split(' - ')[0] || '',
-        url: item.link,
-        snippet: item.snippet
+      if (!data.data?.length) { setLinkedinError('No contacts found for this company.'); return; }
+      const results = data.data.map(p => ({
+        name: p.full_name ? p.full_name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : '',
+        title: p.job_title || '',
+        linkedin_url: p.linkedin_url ? 'https://' + p.linkedin_url : null,
+        email: p.work_email || p.emails?.[0]?.address || null,
+        location: p.location_name || ''
       }));
       setLinkedinResults(results);
-      if (!results.length) setLinkedinError('No LinkedIn profiles found for this company.');
     } catch(e) {
-      setLinkedinError('LinkedIn search failed: ' + e.message);
+      setLinkedinError('Search failed: ' + e.message);
     } finally {
       setLinkedinLoading(false);
     }
