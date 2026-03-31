@@ -19,6 +19,7 @@ const Pipeline = () => {
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [showContractModal, setShowContractModal] = useState(false);
   const [pendingWonProspect, setPendingWonProspect] = useState(null);
   const [contract, setContract] = useState({ annual_value: '', monthly_value: '', start_date: '', term_months: '12', elevators_under_contract: '', service_frequency: 'monthly', notes: '' });
@@ -30,7 +31,13 @@ const Pipeline = () => {
       .then(data => setProspects(data))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, [refreshTick]);
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => setRefreshTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
   }, []);
+
 
   const getColumnProspects = (status) =>
     prospects.filter(p => (p.status || 'new') === status)

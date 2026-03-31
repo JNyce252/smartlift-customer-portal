@@ -11,6 +11,7 @@ const CustomerManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const fetchCustomers = () => {
     const token = localStorage.getItem('smartlift_token');

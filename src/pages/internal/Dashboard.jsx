@@ -17,6 +17,7 @@ const TX_TYPES = [
 const InternalDashboard = () => {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [showAutoProspect, setShowAutoProspect] = useState(false);
   const [customCities, setCustomCities] = useState(['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX']);
   const [newCity, setNewCity] = useState('');
@@ -32,7 +33,7 @@ const InternalDashboard = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.getProspects(), api.getCustomers(), api.getTickets(), api.getInvoices()])
+    Promise.all([api.getProspects(), api.getCustomers(), api.getTickets(), api.getInvoices(), refreshTick])
       .then(([p, c, t, i]) => { setProspects(p); setCustomers(c); setTickets(t); setInvoices(i); })
       .catch(console.error)
       .finally(() => setLoading(false));

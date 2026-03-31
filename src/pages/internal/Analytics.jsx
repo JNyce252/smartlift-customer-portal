@@ -15,6 +15,7 @@ const Analytics = () => {
   const [tdlrStats, setTdlrStats] = useState(null);
   const [contractStats, setContractStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');
@@ -38,7 +39,13 @@ const Analytics = () => {
     })
     .catch(console.error)
     .finally(() => setLoading(false));
+  }, [refreshTick]);
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => setRefreshTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
   }, []);
+
 
   const [rescoring, setRescoring] = useState(false);
   const [rescoreMsg, setRescoreMsg] = useState('');
