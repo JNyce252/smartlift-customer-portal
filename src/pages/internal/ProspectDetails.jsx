@@ -37,6 +37,7 @@ const ProspectDetails = () => {
   const [showSendEmail, setShowSendEmail] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
   const [contract, setContract] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractForm, setContractForm] = useState({ annual_value: '', monthly_value: '', start_date: '', term_months: '12', elevators_under_contract: '', service_frequency: 'monthly', notes: '' });
   const [savingContract, setSavingContract] = useState(false);

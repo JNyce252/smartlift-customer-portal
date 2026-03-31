@@ -22,6 +22,7 @@ const LeadSearch = () => {
   const { user, logout } = useAuth();
   const [mode, setMode] = useState('saved');
   const [lastRefresh, setLastRefresh] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [prospects, setProspects] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
