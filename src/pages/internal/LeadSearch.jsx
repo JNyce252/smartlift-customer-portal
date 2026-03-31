@@ -45,12 +45,12 @@ const LeadSearch = () => {
   const [importing, setImporting] = useState({});
   const [imported, setImported] = useState({});
 
-  useEffect(() => {{
+  useEffect(() => {
     api.getProspects()
       .then(data => { setProspects(data); setFiltered(data); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [lastRefresh]);
 
   useEffect(() => {
     const q = search.toLowerCase();
