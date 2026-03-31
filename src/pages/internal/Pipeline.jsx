@@ -25,6 +25,8 @@ const Pipeline = () => {
   const [contract, setContract] = useState({ annual_value: '', monthly_value: '', start_date: '', term_months: '12', elevators_under_contract: '', service_frequency: 'monthly', notes: '' });
   const [savingContract, setSavingContract] = useState(false);
   const [dragOver, setDragOver] = useState(null);
+  const [columnFilters, setColumnFilters] = useState({});
+  const [showFilterMenu, setShowFilterMenu] = useState(null);
 
   useEffect(() => {
     api.getProspects()
@@ -39,9 +41,24 @@ const Pipeline = () => {
   }, []);
 
 
-  const getColumnProspects = (status) =>
-    prospects.filter(p => (p.status || 'new') === status)
+  const clearColumn = async (columnId) => {
+    if (!window.confirm(`Move all prospects from this column to Lost?`)) return;
+    const token = localStorage.getItem('smartlift_token');
+    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+    const colProspects = prospects.filter(p => (p.status || 'new') === columnId);
+    for (const p of colProspects) {
+      await fetch(`${BASE_URL}/prospects/${p.id}/status`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'lost' }) });
+    }
+    setProspects(prev => prev.map(p => (p.status || 'new') === columnId ? { ...p, status: 'lost' } : p));
+  };
+
+  const getColumnProspects = (status) => {
+    const filter = columnFilters[status] || '';
+    return prospects
+      .filter(p => (p.status || 'new') === status)
+      .filter(p => !filter || p.name?.toLowerCase().includes(filter.toLowerCase()) || p.city?.toLowerCase().includes(filter.toLowerCase()))
       .sort((a, b) => (b.lead_score || 0) - (a.lead_score || 0));
+  };
 
   const updateStatus = async (prospectId, newStatus) => {
     const token = localStorage.getItem('smartlift_token');
