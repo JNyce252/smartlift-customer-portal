@@ -141,7 +141,6 @@ const ProspectDetails = () => {
           const data = await res.json();
           if (!data.data?.emails?.length) return;
           const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-          const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
           const saved = [];
           for (const email of data.data.emails) {
             try {
