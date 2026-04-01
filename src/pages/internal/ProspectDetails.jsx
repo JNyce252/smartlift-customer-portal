@@ -367,10 +367,10 @@ const ProspectDetails = () => {
   const enrichCompany = async () => {
     setEnrichingCompany(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const ecToken = localStorage.getItem('smartlift_token');
       const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-company`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json', ...(ecToken && { Authorization: `Bearer ${ecToken}` }) },
         body: JSON.stringify({ company_name: prospect.name, domain: prospect.website ? new URL(prospect.website.startsWith('http') ? prospect.website : 'https://' + prospect.website).hostname : null })
       });
       const data = await res.json();
@@ -381,11 +381,11 @@ const ProspectDetails = () => {
   };
 
   const enrichPerson = async (linkedinUrl, email, resultIndex) => {
-    const token = localStorage.getItem('smartlift_token');
+    const epToken = localStorage.getItem('smartlift_token');
     try {
       const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-person`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        headers: { 'Content-Type': 'application/json', ...(epToken && { Authorization: `Bearer ${epToken}` }) },
         body: JSON.stringify({ linkedin_url: linkedinUrl, email })
       });
       const data = await res.json();
