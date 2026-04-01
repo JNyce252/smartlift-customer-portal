@@ -361,6 +361,40 @@ const ProspectDetails = () => {
     }
   };
 
+  const [companyEnrichment, setCompanyEnrichment] = useState(null);
+  const [enrichingCompany, setEnrichingCompany] = useState(false);
+
+  const enrichCompany = async () => {
+    setEnrichingCompany(true);
+    try {
+      const token = localStorage.getItem('smartlift_token');
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-company`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({ company_name: prospect.name, domain: prospect.website ? new URL(prospect.website.startsWith('http') ? prospect.website : 'https://' + prospect.website).hostname : null })
+      });
+      const data = await res.json();
+      if (data.found) setCompanyEnrichment(data);
+      else setCompanyEnrichment({ found: false });
+    } catch(e) { console.error(e); }
+    finally { setEnrichingCompany(false); }
+  };
+
+  const enrichPerson = async (linkedinUrl, email, resultIndex) => {
+    const token = localStorage.getItem('smartlift_token');
+    try {
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-person`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify({ linkedin_url: linkedinUrl, email })
+      });
+      const data = await res.json();
+      if (data.found) {
+        setLinkedinResults(prev => prev.map((r, i) => i === resultIndex ? { ...r, phone: data.phone, email: data.email || r.email, enriched: true } : r));
+      }
+    } catch(e) { console.error(e); }
+  };
+
   const saveManualContact = async () => {
     if (!newContact.email && !newContact.first_name) return;
     setSavingContact(true);
@@ -818,6 +852,35 @@ const ProspectDetails = () => {
           )}
         </div>
 
+        {/* Company Enrichment */}
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white font-bold flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-purple-400" />Company Intelligence
+              <span className="px-2 py-0.5 bg-purple-600/20 text-purple-400 rounded text-xs font-normal">People Data Labs</span>
+            </h3>
+            <button onClick={enrichCompany} disabled={enrichingCompany}
+              className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2">
+              <Search className="w-4 h-4" />{enrichingCompany ? 'Enriching...' : 'Enrich Company'}
+            </button>
+          </div>
+          {companyEnrichment === null && (
+            <div className="text-center py-4 border border-dashed border-gray-600 rounded-lg">
+              <p className="text-gray-400 text-sm">Get company details — employee count, industry, LinkedIn, founded year</p>
+            </div>
+          )}
+          {companyEnrichment?.found === false && <p className="text-amber-400 text-sm">No company data found in People Data Labs.</p>}
+          {companyEnrichment?.found && (
+            <div className="grid grid-cols-2 gap-3">
+              {companyEnrichment.employee_count && <div className="bg-gray-700/50 rounded-lg p-3"><p className="text-gray-400 text-xs">Employees</p><p className="text-white font-medium">{companyEnrichment.employee_count.toLocaleString()}</p></div>}
+              {companyEnrichment.industry && <div className="bg-gray-700/50 rounded-lg p-3"><p className="text-gray-400 text-xs">Industry</p><p className="text-white font-medium capitalize">{companyEnrichment.industry}</p></div>}
+              {companyEnrichment.founded && <div className="bg-gray-700/50 rounded-lg p-3"><p className="text-gray-400 text-xs">Founded</p><p className="text-white font-medium">{companyEnrichment.founded}</p></div>}
+              {companyEnrichment.location && <div className="bg-gray-700/50 rounded-lg p-3"><p className="text-gray-400 text-xs">HQ Location</p><p className="text-white font-medium">{companyEnrichment.location}</p></div>}
+              {companyEnrichment.linkedin_url && <div className="bg-gray-700/50 rounded-lg p-3 col-span-2"><p className="text-gray-400 text-xs">LinkedIn</p><a href={companyEnrichment.linkedin_url} target="_blank" rel="noreferrer" className="text-blue-400 text-sm hover:underline">{companyEnrichment.linkedin_url}</a></div>}
+            </div>
+          )}
+        </div>
+
         {/* People Intelligence */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -860,8 +923,14 @@ const ProspectDetails = () => {
                         <ExternalLink className="w-3.5 h-3.5" />LinkedIn
                       </a>
                     )}
+                    {(r.linkedin_url || r.email) && !r.enriched && (
+                      <button onClick={() => enrichPerson(r.linkedin_url, r.email, i)}
+                        className="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 rounded-lg text-xs">Enrich</button>
+                    )}
+                    {r.enriched && <span className="px-2 py-1.5 text-green-400 text-xs">✓ Enriched</span>}
+                    {r.phone && <span className="text-gray-300 text-xs">{r.phone}</span>}
                     <button onClick={() => {
-                      setNewContact({ first_name: r.name.split(' ')[0] || '', last_name: r.name.split(' ').slice(1).join(' ') || '', email: r.email || '', title: r.title || '', phone: '', linkedin_url: r.linkedin_url || '' });
+                      setNewContact({ first_name: r.name.split(' ')[0] || '', last_name: r.name.split(' ').slice(1).join(' ') || '', email: r.email || '', title: r.title || '', phone: r.phone || '', linkedin_url: r.linkedin_url || '' });
                       setShowAddContact(true);
                     }} className="px-2 py-1.5 bg-green-900/30 hover:bg-green-900/50 text-green-400 rounded-lg text-xs">+ Save</button>
                   </div>
