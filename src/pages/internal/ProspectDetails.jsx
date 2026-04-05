@@ -514,13 +514,29 @@ const ProspectDetails = () => {
     try {
       const token = localStorage.getItem('smartlift_token');
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      const res = await fetch(`${BASE_URL}/prospects/${id}/proposal`, { method: 'POST', headers, signal: AbortSignal.timeout(55000) });
-      if (!res.ok) throw new Error('Server returned ' + res.status);
-      const data = await res.json();
-      if (!data.content) throw new Error('Empty response from server');
-      setProposal(data.content);
+      
+      // Fire generation request — may timeout but Lambda keeps running
+      fetch(`${BASE_URL}/prospects/${id}/proposal`, { method: 'POST', headers }).catch(() => {});
+      
+      // Poll for result every 4 seconds for up to 60 seconds
+      let attempts = 0;
+      const maxAttempts = 15;
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 4000));
+        attempts++;
+        try {
+          const pollRes = await fetch(`${BASE_URL}/prospects/${id}/proposal`, { headers: { ...(token && { Authorization: `Bearer ${token}` }) } });
+          const pollData = await pollRes.json();
+          if (pollData.status === 'ready' && pollData.content) {
+            setProposal(pollData.content);
+            setProposalLoading(false);
+            return;
+          }
+        } catch {}
+      }
+      throw new Error('Proposal generation timed out. Please try again.');
     } catch (e) {
-      setProposal('## Error Generating Proposal\n\nFailed to generate: ' + e.message + '\n\nPlease try again.');
+      setProposal('## Error\n\n' + e.message);
     } finally {
       setProposalLoading(false);
     }
