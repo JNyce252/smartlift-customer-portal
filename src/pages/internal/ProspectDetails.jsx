@@ -390,7 +390,22 @@ const ProspectDetails = () => {
       });
       const data = await res.json();
       if (data.found) {
-        setLinkedinResults(prev => prev.map((r, i) => i === resultIndex ? { ...r, phone: data.phone, email: data.email || r.email, enriched: true } : r));
+        // Update the results list in memory
+        const r = linkedinResults[resultIndex];
+        const enriched = { ...r, phone: data.phone || r.phone, email: data.email || r.email, enriched: true };
+        setLinkedinResults(prev => prev.map((item, i) => i === resultIndex ? enriched : item));
+        
+        // Pre-fill the Add Contact form with enriched data so Derald can save it
+        const nameParts = (enriched.name || '').split(' ');
+        setNewContact({
+          first_name: nameParts[0] || '',
+          last_name: nameParts.slice(1).join(' ') || '',
+          email: enriched.email || '',
+          title: enriched.title || '',
+          phone: data.phone || '',
+          linkedin_url: enriched.linkedin_url || ''
+        });
+        setShowAddContact(true);
       }
     } catch(e) { console.error(e); }
   };
@@ -411,6 +426,19 @@ const ProspectDetails = () => {
       setShowAddContact(false);
     } catch (e) { alert('Failed to save contact: ' + e.message); }
     finally { setSavingContact(false); }
+  };
+
+  const setPrimaryContact = async (contactId) => {
+    const token = localStorage.getItem('smartlift_token');
+    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+    // Clear all primary first, then set new one
+    await Promise.all(contacts.map(c =>
+      fetch(`${BASE_URL}/prospects/${id}/contacts/${c.id}`, {
+        method: 'PATCH', headers,
+        body: JSON.stringify({ is_primary: c.id === contactId })
+      })
+    ));
+    setContacts(prev => prev.map(c => ({ ...c, is_primary: c.id === contactId })));
   };
 
   const deleteContact = async (contactId) => {
@@ -941,6 +969,7 @@ const ProspectDetails = () => {
                       {c.email && <p className="text-purple-400 text-sm">{c.email}</p>}
                       {c.phone && <p className="text-blue-400 text-sm">{c.phone}</p>}
                       {c.source === 'manual' && <span className="text-xs px-1.5 py-0.5 bg-gray-600 text-gray-400 rounded">Manual</span>}
+                      {c.is_primary && <span className="text-xs px-1.5 py-0.5 bg-green-900/30 text-green-400 border border-green-700/30 rounded">⭐ Primary</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -957,6 +986,10 @@ const ProspectDetails = () => {
                       <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-white rounded-lg text-xs flex items-center gap-1">
                         <ExternalLink className="w-3.5 h-3.5" />LinkedIn
                       </a>
+                    )}
+                    {!c.is_primary && (
+                      <button onClick={() => setPrimaryContact(c.id)}
+                        className="px-2 py-1.5 bg-green-900/30 hover:bg-green-900/50 text-green-400 rounded-lg text-xs" title="Set as primary contact for proposals">⭐</button>
                     )}
                     <button onClick={() => deleteContact(c.id)}
                       className="px-2 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg text-xs">✕</button>
