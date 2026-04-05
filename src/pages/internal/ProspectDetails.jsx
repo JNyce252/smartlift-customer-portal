@@ -28,6 +28,7 @@ const ProspectDetails = () => {
   const [autoSearched, setAutoSearched] = useState(false);
   const [proposal, setProposal] = useState(null);
   const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalEditMode, setProposalEditMode] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
   const [improvingProposal, setImprovingProposal] = useState(false);
   const [uploadedProposal, setUploadedProposal] = useState('');
@@ -1532,13 +1533,27 @@ const ProspectDetails = () => {
                 <div className="flex flex-col items-center justify-center py-16">
                   <Brain className="w-12 h-12 text-purple-400 animate-pulse mb-4" />
                   <p className="text-white text-lg mb-2">Generating proposal...</p>
-                  <p className="text-gray-400 text-sm">Analyzing prospect data and crafting personalized proposal</p>
+                  <p className="text-gray-400 text-sm">This takes about 25 seconds — crafting a personalized proposal</p>
                 </div>
-              ) : (
-                <div className="prose prose-invert max-w-none">
-                  {formatProposal(proposal)}
+              ) : proposal ? (
+                <div>
+                  <div className="flex gap-2 mb-4">
+                    <button onClick={() => setProposalEditMode(false)}
+                      className={`px-3 py-1 rounded text-xs font-medium ${!proposalEditMode ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'}`}>Preview</button>
+                    <button onClick={() => setProposalEditMode(true)}
+                      className={`px-3 py-1 rounded text-xs font-medium ${proposalEditMode ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400'}`}>Edit</button>
+                  </div>
+                  {proposalEditMode ? (
+                    <textarea value={proposal} onChange={e => setProposal(e.target.value)}
+                      className="w-full bg-gray-900 rounded-lg p-4 text-sm text-gray-300 font-mono border border-gray-700 focus:outline-none focus:border-purple-500 resize-y"
+                      rows={30} />
+                  ) : (
+                    <div className="prose prose-invert max-w-none">
+                      {formatProposal(proposal)}
+                    </div>
+                  )}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
