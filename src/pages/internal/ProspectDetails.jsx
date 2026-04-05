@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import UserMenu from '../../components/common/UserMenu';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Star, LogOut, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText } from 'lucide-react';
+import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
@@ -661,9 +662,7 @@ const ProspectDetails = () => {
               <Link to="/internal/leads"><Building2 className="w-8 h-8 text-purple-400" /></Link>
               <div><h1 className="text-xl font-bold text-white">Prospect Intelligence</h1><p className="text-xs text-gray-400">{user?.email}</p></div>
             </div>
-            <button onClick={logout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
-              <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Logout</span>
-            </button>
+            <UserMenu />
           </div>
         </div>
       </header>

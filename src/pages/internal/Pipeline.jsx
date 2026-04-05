@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
-import { Building2, LogOut, Star, Brain, Eye, GripVertical } from 'lucide-react';
+import { Building2, Star, Brain, Eye, GripVertical } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
@@ -167,9 +168,7 @@ const Pipeline = () => {
                 <span className="text-gray-400 text-sm">Active Pipeline:</span>
                 <span className="text-white font-bold">${(totalPipelineValue/1000).toFixed(0)}K</span>
               </div>
-              <button onClick={logout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
-                <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Logout</span>
-              </button>
+              <UserMenu />
             </div>
           </div>
         </div>

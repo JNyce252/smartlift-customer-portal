@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
-import { Search, Building2, MapPin, LogOut, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter } from 'lucide-react';
+import { Search, Building2, MapPin, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
@@ -263,9 +264,7 @@ const LeadSearch = () => {
                 <p className="text-xs text-gray-400">{user?.email}</p>
               </div>
             </div>
-            <button onClick={logout} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-2">
-              <LogOut className="w-4 h-4" /><span className="hidden sm:inline">Logout</span>
-            </button>
+            <UserMenu />
           </div>
         </div>
       </header>
