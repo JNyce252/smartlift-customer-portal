@@ -123,6 +123,13 @@ const ProspectDetails = () => {
         'holiday inn': 'ihg.com', 'doubletree': 'hilton.com', 'courtyard': 'marriott.com',
         'fairfield': 'marriott.com', 'homewood': 'hilton.com', 'tru by hilton': 'hilton.com',
         'best western': 'bestwestern.com', 'country inn': 'radissonhotels.com',
+        'baylor scott': 'bswhealth.com', 'methodist': 'mhs.net',
+        'medical city': 'medicalcityhealthcare.com', 'parkland': 'parklandhospital.com',
+        'ut southwestern': 'utsouthwestern.edu', 'texas health': 'texashealth.org',
+        'children': 'childrens.com', 'presbyterian': 'phhs.org',
+        'simon property': 'simon.com', 'brookfield': 'brookfieldproperties.com',
+        'cushman': 'cushmanwakefield.com', 'jll': 'jll.com',
+        'cbre': 'cbre.com', 'colliers': 'colliers.com',
       };
       const nameLower = prospect.name.toLowerCase();
       for (const [key, val] of Object.entries(knownDomains)) {
@@ -140,7 +147,7 @@ const ProspectDetails = () => {
         headers: { ...(token && { Authorization: `Bearer ${token}` }) }
       });
           const data = await res.json();
-          if (!data.data?.emails?.length) return;
+          if (!data.data?.emails?.length) { setHunterError('No contacts found at ' + domain + '. Try entering the domain manually below.'); return; }
           const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
           const saved = [];
           for (const email of data.data.emails) {
