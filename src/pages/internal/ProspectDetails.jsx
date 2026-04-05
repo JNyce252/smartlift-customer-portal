@@ -165,6 +165,24 @@ const ProspectDetails = () => {
       };
       autoSearch();
     }
+
+    // Also auto-run PDL person search if no contacts exist
+    if (prospect.name && !autoSearched) {
+      setAutoSearched(true);
+      const pdlAutoSearch = async () => {
+        try {
+          const token = localStorage.getItem('smartlift_token');
+          const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/people-search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            body: JSON.stringify({ company_name: prospect.name })
+          });
+          const data = await res.json();
+          if (data.results?.length) setLinkedinResults(data.results);
+        } catch {}
+      };
+      pdlAutoSearch();
+    }
   }, [loading, prospect]);
 
   const searchHunter = async () => {
