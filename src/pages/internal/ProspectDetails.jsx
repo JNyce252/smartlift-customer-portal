@@ -508,16 +508,19 @@ const ProspectDetails = () => {
   };
 
   const generateProposal = async () => {
-    setProposalLoading(true);
     setShowProposal(true);
+    setProposalLoading(true);
+    setProposal(null);
     try {
       const token = localStorage.getItem('smartlift_token');
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      const res = await fetch(`${BASE_URL}/prospects/${id}/proposal`, { method: 'POST', headers });
+      const res = await fetch(`${BASE_URL}/prospects/${id}/proposal`, { method: 'POST', headers, signal: AbortSignal.timeout(55000) });
+      if (!res.ok) throw new Error('Server returned ' + res.status);
       const data = await res.json();
+      if (!data.content) throw new Error('Empty response from server');
       setProposal(data.content);
     } catch (e) {
-      setProposal('## Error Generating Proposal\n\n' + e.message + '\n\nThis is usually because Amazon Bedrock model access is still pending approval. The nightly AI scorer will automatically generate proposals once access is granted.');
+      setProposal('## Error Generating Proposal\n\nFailed to generate: ' + e.message + '\n\nPlease try again.');
     } finally {
       setProposalLoading(false);
     }
@@ -1546,15 +1549,6 @@ const ProspectDetails = () => {
                   <Brain className="w-12 h-12 text-purple-400 animate-pulse mb-4" />
                   <p className="text-white text-lg mb-2">Generating proposal...</p>
                   <p className="text-gray-400 text-sm">This takes about 25 seconds — crafting a personalized proposal</p>
-                </div>
-              ) : !proposal ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <Brain className="w-12 h-12 text-purple-400 mb-4" />
-                  <p className="text-white text-lg mb-2">Ready to generate proposal</p>
-                  <p className="text-gray-400 text-sm mb-6">This takes about 25 seconds — AI will craft a personalized proposal</p>
-                  <button onClick={generateProposal} className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium flex items-center gap-2">
-                    <Brain className="w-4 h-4" />Generate Proposal
-                  </button>
                 </div>
               ) : proposal ? (
                 <div>
