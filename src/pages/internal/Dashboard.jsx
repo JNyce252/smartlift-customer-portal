@@ -33,6 +33,7 @@ const InternalDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState({});
   const [tdlrStats, setTdlrStats] = useState({});
+  const [weather, setWeather] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -50,6 +51,19 @@ const InternalDashboard = () => {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    // Fetch weather for Dallas (Derald's service area)
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=32.7767&longitude=-96.7970&current_weather=true&temperature_unit=fahrenheit')
+      .then(r => r.json())
+      .then(data => {
+        if (data.current_weather) {
+          const code = data.current_weather.weathercode;
+          const temp = Math.round(data.current_weather.temperature);
+          const desc = code === 0 ? 'Clear' : code <= 3 ? 'Partly Cloudy' : code <= 48 ? 'Foggy' : code <= 67 ? 'Rainy' : code <= 77 ? 'Snowy' : code <= 82 ? 'Showers' : 'Stormy';
+          const icon = code === 0 ? '☀️' : code <= 3 ? '⛅' : code <= 48 ? '🌫️' : code <= 67 ? '🌧️' : code <= 77 ? '❄️' : code <= 82 ? '🌦️' : '⛈️';
+          setWeather({ temp, desc, icon });
+        }
+      }).catch(() => {});
   }, [refreshTick]);
 
   const highScoreProspects = prospects.filter(p => p.lead_score >= 70);
@@ -249,6 +263,7 @@ const InternalDashboard = () => {
             </div>
             <div className="hidden lg:block text-right">
               <p className="text-gray-500 text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              {weather && <p className="text-gray-400 text-sm mt-1">{weather.icon} Dallas {weather.temp}°F — {weather.desc}</p>}
               {profile.company_name && <p className="text-purple-400 text-sm font-medium mt-1">{profile.company_name}</p>}
             </div>
           </div>
