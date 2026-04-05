@@ -544,7 +544,7 @@ const ProspectDetails = () => {
 
   const renderLine = (line) => {
     // Handle bold and italic inline
-    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+    const parts = line.split(/([*][*][^*]+[*][*]|[*][^*]+[*])/g);
     return parts.map((part, j) => {
       if (part.startsWith('**') && part.endsWith('**')) return <strong key={j} className="text-white font-semibold">{part.slice(2,-2)}</strong>;
       if (part.startsWith('*') && part.endsWith('*')) return <em key={j} className="text-gray-300 italic">{part.slice(1,-1)}</em>;
