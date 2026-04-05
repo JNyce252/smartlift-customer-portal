@@ -31,13 +31,26 @@ const InternalDashboard = () => {
   const [tickets, setTickets] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState({});
+  const [tdlrStats, setTdlrStats] = useState({});
 
   useEffect(() => {
-    Promise.all([api.getProspects(), api.getCustomers(), api.getTickets(), api.getInvoices(), refreshTick])
-      .then(([p, c, t, i]) => { setProspects(p); setCustomers(c); setTickets(t); setInvoices(i); })
+    Promise.all([
+      api.getProspects(),
+      api.getCustomers(),
+      api.getTickets(),
+      api.getInvoices(),
+      fetch(`${BASE_URL}/profile`, { headers: { Authorization: `Bearer ${localStorage.getItem('smartlift_token')}` } }).then(r => r.json()),
+      fetch(`${BASE_URL}/analytics/tdlr`, { headers: { Authorization: `Bearer ${localStorage.getItem('smartlift_token')}` } }).then(r => r.json()),
+    ])
+      .then(([p, c, t, i, prof, tdlr]) => {
+        setProspects(p); setCustomers(c); setTickets(t); setInvoices(i);
+        setProfile(prof || {});
+        setTdlrStats(tdlr || {});
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshTick]);
 
   const highScoreProspects = prospects.filter(p => p.lead_score >= 70);
   const highUrgencyProspects = prospects.filter(p => p.service_urgency === 'high');
@@ -200,8 +213,8 @@ const InternalDashboard = () => {
               <div className="flex items-center gap-3">
                 <div className="bg-purple-600 rounded-lg p-2"><Building2 className="w-6 h-6 text-white" /></div>
                 <div>
-                  <h1 className="text-xl font-bold text-white">Southwest Cabs</h1>
-                  <p className="text-xs text-gray-400">AI Powered Lead Search</p>
+                  <h1 className="text-xl font-bold text-white">{profile.company_name || 'Smarterlift'}</h1>
+                  <p className="text-xs text-gray-400">AI Powered Lead Intelligence</p>
                 </div>
               </div>
             </div>
@@ -223,17 +236,31 @@ const InternalDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-white mb-1">Welcome back{user?.name ? `, ${user.name.split(' ')[0]}` : ''}!</h2>
-          <p className="text-gray-400">Here's your lead pipeline and activity summary.</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-white mb-1">
+                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! 👋
+              </h2>
+              <p className="text-gray-400">
+                {prospects.length === 0 
+                  ? "Let's find your first leads — click Find New Leads to get started." 
+                  : `You have ${prospects.filter(p => p.lead_score >= 80).length} high-priority prospects and ${tdlrStats.expiring_soon || 0} TDLR certifications expiring soon.`}
+              </p>
+            </div>
+            <div className="hidden lg:block text-right">
+              <p className="text-gray-500 text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              {profile.company_name && <p className="text-purple-400 text-sm font-medium mt-1">{profile.company_name}</p>}
+            </div>
+          </div>
         </div>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {[
-            { icon: Search, iconBg: 'bg-blue-600/20', iconColor: 'text-blue-400', label: 'Total Prospects', value: prospects.length, sub: `${highScoreProspects.length} high score` },
-            { icon: Brain, iconBg: 'bg-purple-600/20', iconColor: 'text-purple-400', label: 'Pipeline Value', value: `$${(pipelineValue/1000).toFixed(0)}K`, sub: `${highUrgencyProspects.length} high urgency` },
-            { icon: Clock, iconBg: 'bg-amber-600/20', iconColor: 'text-amber-400', label: 'Open Tickets', value: openTickets.length, sub: `${tickets.length} total` },
-            { icon: Users, iconBg: 'bg-green-600/20', iconColor: 'text-green-400', label: 'Customers', value: customers.length, sub: 'Active accounts' },
+            { icon: Search, iconBg: 'bg-blue-600/20', iconColor: 'text-blue-400', label: 'Total Prospects', value: prospects.length, sub: `${highScoreProspects.length} high score (80+)` },
+            { icon: Brain, iconBg: 'bg-purple-600/20', iconColor: 'text-purple-400', label: 'High Urgency', value: highUrgencyProspects.length, sub: `${prospects.filter(p => p.service_urgency === 'medium').length} medium urgency` },
+            { icon: AlertTriangle, iconBg: 'bg-amber-600/20', iconColor: 'text-amber-400', label: 'TDLR Expiring Soon', value: loading ? '...' : (tdlrStats.expiring_soon || 0), sub: `${tdlrStats.expired_certs || 0} already expired` },
+            { icon: Users, iconBg: 'bg-green-600/20', iconColor: 'text-green-400', label: 'Customers', value: customers.length, sub: `${tdlrStats.total_records ? tdlrStats.total_records.toLocaleString() : '0'} TX elevators tracked` },
           ].map(({ icon: Icon, iconBg, iconColor, label, value, sub }) => (
             <div key={label} className="bg-gray-800 rounded-xl p-6 border border-gray-700">
               <div className="flex items-center justify-between mb-4">
