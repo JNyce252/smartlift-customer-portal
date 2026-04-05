@@ -1360,7 +1360,7 @@ const ProspectDetails = () => {
                 </div>
               ) : (
                 <>
-                  <div className="bg-gray-900 rounded-lg p-4 mb-4 text-sm text-gray-300 whitespace-pre-wrap font-mono border border-gray-700">{introContent}</div>
+                  <textarea value={introContent} onChange={e => setIntroContent(e.target.value)} className="w-full bg-gray-900 rounded-lg p-4 mb-4 text-sm text-gray-300 font-mono border border-gray-700 focus:outline-none focus:border-purple-500 resize-y" rows={14} />
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
