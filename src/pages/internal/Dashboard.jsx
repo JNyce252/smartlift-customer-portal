@@ -326,6 +326,9 @@ const InternalDashboard = () => {
                   <div className="flex-shrink-0 text-right">
                     <span className={`font-bold text-xl ${prospect.lead_score >= 90 ? 'text-green-400' : prospect.lead_score >= 70 ? 'text-amber-400' : 'text-gray-400'}`}>{prospect.lead_score || '—'}</span>
                     <p className="text-gray-500 text-xs">score</p>
+                    {prospect.elevator_complaints > 0 && (
+                      <span className="text-red-400 text-xs">⚠ {prospect.elevator_complaints} complaints</span>
+                    )}
                   </div>
                 </Link>
               ))}
@@ -335,6 +338,19 @@ const InternalDashboard = () => {
 
           {/* Right Column */}
           <div className="space-y-6">
+            {/* TDLR Expiring Soon */}
+            {tdlrStats.expiring_soon > 0 && (
+              <div className="bg-gray-800 rounded-xl border border-amber-700/40 p-5">
+                <h3 className="text-white font-bold mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />TDLR Expiring Soon
+                </h3>
+                <p className="text-amber-400 text-2xl font-bold">{tdlrStats.expiring_soon}</p>
+                <p className="text-gray-400 text-sm mb-3">buildings with certs expiring in 90 days</p>
+                <p className="text-gray-500 text-xs">These buildings need elevator service now — perfect time to reach out.</p>
+                <Link to="/internal/analytics" className="mt-3 inline-block text-amber-400 hover:text-amber-300 text-sm">View in Analytics →</Link>
+              </div>
+            )}
+
             {/* Urgent Alerts */}
             <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
