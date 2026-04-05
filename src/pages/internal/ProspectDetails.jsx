@@ -657,6 +657,96 @@ const ProspectDetails = () => {
           </div>
         </div>
 
+        {/* Review Intelligence Section */}
+        {prospect.review_intelligence && (
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold flex items-center gap-2">
+                <Star className="w-5 h-5 text-yellow-400" />Review Intelligence
+                <span className="px-2 py-0.5 bg-yellow-600/20 text-yellow-400 rounded text-xs font-normal">AI Analyzed</span>
+              </h3>
+              {prospect.review_intelligence.opportunity_score > 0 && (
+                <div className={`px-3 py-1 rounded-full text-sm font-bold ${
+                  prospect.review_intelligence.opportunity_score >= 70 ? 'bg-red-900/30 text-red-400 border border-red-700/30' :
+                  prospect.review_intelligence.opportunity_score >= 40 ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/30' :
+                  'bg-gray-700 text-gray-400 border border-gray-600'}`}>
+                  Opportunity: {prospect.review_intelligence.opportunity_score}/100
+                </div>
+              )}
+            </div>
+
+            {/* Sales Angle */}
+            {prospect.review_intelligence.sales_angle && (
+              <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg p-4 mb-4">
+                <p className="text-purple-300 text-xs font-semibold uppercase tracking-wide mb-1">Sales Angle</p>
+                <p className="text-gray-200 text-sm leading-relaxed">{prospect.review_intelligence.sales_angle}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Elevator Complaints */}
+              <div className="bg-gray-700/50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs mb-1">Elevator Complaints</p>
+                <p className={`text-xl font-bold ${prospect.review_intelligence.elevator_complaints > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  {prospect.review_intelligence.elevator_complaints || 0}
+                </p>
+                <p className="text-gray-500 text-xs">mentions in reviews</p>
+              </div>
+
+              {/* Management Quality */}
+              <div className="bg-gray-700/50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs mb-1">Management Quality</p>
+                <p className={`text-sm font-semibold capitalize ${
+                  prospect.review_intelligence.management_quality === 'poor' ? 'text-red-400' :
+                  prospect.review_intelligence.management_quality === 'fair' ? 'text-yellow-400' :
+                  prospect.review_intelligence.management_quality === 'good' ? 'text-blue-400' : 'text-green-400'}`}>
+                  {prospect.review_intelligence.management_quality || 'Unknown'}
+                </p>
+                <p className="text-gray-500 text-xs">based on review responses</p>
+              </div>
+            </div>
+
+            {/* Complaint Details */}
+            {prospect.review_intelligence.complaint_details?.length > 0 && prospect.review_intelligence.complaint_details[0] !== '<complaint>' && (
+              <div className="mt-4">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-2">Complaint Details</p>
+                <div className="space-y-1">
+                  {prospect.review_intelligence.complaint_details.map((c, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-red-400 mt-0.5">•</span>
+                      <p className="text-gray-300 text-sm">{c}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Urgency Signals */}
+            {prospect.review_intelligence.urgency_signals?.length > 0 && prospect.review_intelligence.urgency_signals[0] !== '<signals>' && (
+              <div className="mt-4">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-2">Urgency Signals</p>
+                <div className="flex flex-wrap gap-2">
+                  {prospect.review_intelligence.urgency_signals.map((s, i) => (
+                    <span key={i} className="px-2 py-1 bg-orange-900/20 text-orange-400 border border-orange-700/30 rounded text-xs">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Maintenance Signals */}
+            {prospect.review_intelligence.maintenance_signals?.length > 0 && (
+              <div className="mt-4">
+                <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-2">Maintenance Signals</p>
+                <div className="flex flex-wrap gap-2">
+                  {prospect.review_intelligence.maintenance_signals.map((s, i) => (
+                    <span key={i} className="px-2 py-1 bg-blue-900/20 text-blue-400 border border-blue-700/30 rounded text-xs">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TDLR Section */}
         {hasTdlr && (
           <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
