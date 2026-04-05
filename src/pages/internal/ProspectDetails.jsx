@@ -523,14 +523,26 @@ const ProspectDetails = () => {
     }
   };
 
+  const renderLine = (line) => {
+    // Handle bold and italic inline
+    const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+    return parts.map((part, j) => {
+      if (part.startsWith('**') && part.endsWith('**')) return <strong key={j} className="text-white font-semibold">{part.slice(2,-2)}</strong>;
+      if (part.startsWith('*') && part.endsWith('*')) return <em key={j} className="text-gray-300 italic">{part.slice(1,-1)}</em>;
+      return part;
+    });
+  };
+
   const formatProposal = (text) => {
     if (!text) return null;
     return text.split('\n').map((line, i) => {
-      if (line.startsWith('## ')) return <h3 key={i} className="text-purple-400 font-bold text-lg mt-6 mb-2">{line.replace('## ', '')}</h3>;
-      if (line.startsWith('# ')) return <h2 key={i} className="text-white font-bold text-xl mt-6 mb-2">{line.replace('# ', '')}</h2>;
-      if (line.startsWith('- ')) return <li key={i} className="text-gray-300 text-sm ml-4 mb-1 list-disc">{line.replace('- ', '')}</li>;
+      if (line.startsWith('### ')) return <h4 key={i} className="text-purple-300 font-bold text-base mt-4 mb-2">{line.replace('### ', '')}</h4>;
+      if (line.startsWith('## ')) return <h3 key={i} className="text-purple-400 font-bold text-lg mt-6 mb-2 border-b border-gray-700 pb-1">{line.replace('## ', '')}</h3>;
+      if (line.startsWith('# ')) return <h2 key={i} className="text-white font-bold text-xl mt-6 mb-3">{line.replace('# ', '')}</h2>;
+      if (line.startsWith('- ')) return <li key={i} className="text-gray-300 text-sm ml-4 mb-1 list-disc">{renderLine(line.replace('- ', ''))}</li>;
+      if (line.startsWith('---')) return <hr key={i} className="border-gray-700 my-4" />;
       if (line.trim() === '') return <div key={i} className="mb-2" />;
-      return <p key={i} className="text-gray-300 text-sm mb-2 leading-relaxed">{line}</p>;
+      return <p key={i} className="text-gray-300 text-sm mb-2 leading-relaxed">{renderLine(line)}</p>;
     });
   };
 
