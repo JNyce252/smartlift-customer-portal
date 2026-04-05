@@ -11,7 +11,7 @@ const Profile = () => {
     company_name: '', owner_name: '', email: '', phone: '',
     website: '', address: '', city: '', state: '', tagline: '',
     logo_url: '', bio: '', years_in_business: '', service_area: '',
-    tdlr_license: '', insurance_info: '', certifications: ''
+    tdlr_license: '', insurance_info: '', certifications: '', credentials: ''
   });
   const [projects, setProjects] = useState([]);
   const [newProject, setNewProject] = useState({ building_name: '', building_type: 'hotel', city: '', state: 'TX', scope: '', year_completed: new Date().getFullYear() });
@@ -176,6 +176,13 @@ const Profile = () => {
               rows={2}
               className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none" />
           </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">Credentials</label>
+              <textarea value={profile.credentials || ''} onChange={e => setProfile(prev => ({ ...prev, credentials: e.target.value }))}
+                placeholder="e.g. Licensed Texas elevator contractor with 20+ years experience in commercial maintenance, emergency repair, and modernization"
+                rows={3} className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
+            </div>
         </div>
 
         {/* Completed Projects */}
