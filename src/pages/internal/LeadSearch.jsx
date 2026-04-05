@@ -223,8 +223,17 @@ const LeadSearch = () => {
         if (details.website) enriched.website = details.website;
         if (details.formatted_phone_number) enriched.phone = details.formatted_phone_number;
       } catch {}
-      await api.createProspect(enriched);
+      const newProspect = await api.createProspect(enriched);
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
+      // Trigger review analysis in background - fire and forget
+      if (newProspect && newProspect.id && place.google_place_id) {
+        const token = localStorage.getItem('smartlift_token');
+        fetch(`${BASE_URL}/prospects/${newProspect.id}/analyze-reviews`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+          body: JSON.stringify({ place_id: place.google_place_id })
+        }).catch(() => {}); // non-blocking, ignore errors
+      }
       const updated = await api.getProspects();
       setProspects(updated);
       setFiltered(updated);
