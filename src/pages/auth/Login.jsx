@@ -49,9 +49,9 @@ const Login = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
             <Zap className="w-12 h-12 text-blue-400" />
-            <h1 className="text-4xl font-bold text-white">SmartLift</h1>
+            <h1 className="text-4xl font-bold text-white">Smarterlift</h1>
           </div>
-          <p className="text-gray-400">Intelligent Elevator Service Management</p>
+          <p className="text-gray-400">AI-Powered Elevator Service Intelligence</p>
         </div>
         <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-2xl">
           <h2 className="text-2xl font-bold text-white mb-6">Sign In</h2>
@@ -99,7 +99,7 @@ const Login = () => {
             <p className="text-gray-400 text-sm">Don't have an account? <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium">Sign up</Link></p>
           </div>
         </div>
-        <p className="mt-8 text-center text-gray-500 text-sm">© 2025 SmartLift UI. All rights reserved.</p>
+        <p className="mt-8 text-center text-gray-500 text-sm">© 2026 Smarterlift. All rights reserved.</p>
       </div>
     </div>
   );
