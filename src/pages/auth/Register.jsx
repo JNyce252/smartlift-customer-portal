@@ -48,7 +48,7 @@ const Register = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
             <Zap className="w-12 h-12 text-blue-400" />
-            <h1 className="text-4xl font-bold text-white">SmartLift</h1>
+            <h1 className="text-4xl font-bold text-white">Smarterlift</h1>
           </div>
           <p className="text-gray-400">Create your account</p>
         </div>
@@ -130,7 +130,7 @@ const Register = () => {
             </p>
           </div>
         </div>
-        <p className="mt-8 text-center text-gray-500 text-sm">© 2025 SmartLift UI. All rights reserved.</p>
+        <p className="mt-8 text-center text-gray-500 text-sm">© 2026 Smarterlift. All rights reserved.</p>
       </div>
     </div>
   );

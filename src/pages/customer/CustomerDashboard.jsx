@@ -76,7 +76,7 @@ const CustomerDashboard = () => {
             <div className="flex items-center gap-3">
               <Home className="w-8 h-8 text-blue-400" />
               <div>
-                <h1 className="text-xl font-bold text-white">SmartLift Customer Portal</h1>
+                <h1 className="text-xl font-bold text-white">Smarterlift</h1>
                 <p className="text-xs text-gray-400">{user?.name || 'Customer'}</p>
               </div>
             </div>
