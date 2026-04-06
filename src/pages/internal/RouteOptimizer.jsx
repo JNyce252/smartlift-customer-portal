@@ -14,6 +14,8 @@ const RouteOptimizer = () => {
   const googleMapRef = useRef(null);
   const directionsRendererRef = useRef(null);
   const markersRef = useRef([]);
+  const startInputRef = useRef(null);
+  const autocompleteRef = useRef(null);
   const [mapsLoaded, setMapsLoaded] = useState(false);
   const [prospects, setProspects] = useState([]);
   const [stops, setStops] = useState([]);
@@ -56,6 +58,22 @@ const RouteOptimizer = () => {
       polylineOptions: { strokeColor: '#8B5CF6', strokeWeight: 4 }
     });
     directionsRendererRef.current.setMap(googleMapRef.current);
+
+    // Initialize autocomplete on start address input
+    if (startInputRef.current) {
+      autocompleteRef.current = new window.google.maps.places.Autocomplete(startInputRef.current, {
+        types: ['geocode', 'establishment'],
+        componentRestrictions: { country: 'us' }
+      });
+      autocompleteRef.current.addListener('place_changed', () => {
+        const place = autocompleteRef.current.getPlace();
+        if (place.formatted_address) {
+          setStartAddress(place.formatted_address);
+        } else if (place.name) {
+          setStartAddress(place.name);
+        }
+      });
+    }
   }, [mapsLoaded]);
 
   // Load prospects
@@ -213,10 +231,11 @@ const RouteOptimizer = () => {
           <div className="p-4 border-b border-gray-700">
             <label className="text-gray-400 text-xs font-semibold uppercase tracking-wide block mb-2">Starting From</label>
             <input
+              ref={startInputRef}
               type="text"
-              value={startAddress}
+              defaultValue={startAddress}
               onChange={e => setStartAddress(e.target.value)}
-              placeholder="Enter starting address..."
+              placeholder="Enter your starting address..."
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
             />
           </div>
@@ -234,12 +253,7 @@ const RouteOptimizer = () => {
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {stops.length >= 2 && (
-                  <button onClick={calculateRoute} disabled={calculating}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-1.5">
-                    <Navigation className="w-3.5 h-3.5" />{calculating ? 'Calculating...' : 'Get Route'}
-                  </button>
-                )}
+
               </div>
             </div>
             {stops.length === 0 ? (
@@ -292,6 +306,16 @@ const RouteOptimizer = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {stops.length >= 2 && !routeInfo && (
+            <div className="p-4 border-b border-gray-700">
+              <button onClick={calculateRoute} disabled={calculating}
+                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                <Navigation className="w-4 h-4" />
+                {calculating ? 'Calculating Route...' : 'Get Directions (' + stops.length + ' stops)'}
+              </button>
             </div>
           )}
 
