@@ -348,51 +348,79 @@ const InternalDashboard = () => {
               </div>
             )}
 
-            {/* Urgent Alerts */}
-            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
-              <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-400" />Urgent Alerts
-              </h3>
-              {highUrgencyProspects.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-400 text-sm"><CheckCircle className="w-4 h-4" />No urgent prospects</div>
-              ) : (
+            {/* Emergency Work Orders */}
+            {tickets.filter(t => t.priority === 'emergency' && t.status !== 'completed' && t.status !== 'cancelled').length > 0 && (
+              <div className="bg-red-900/20 rounded-xl border border-red-700/50 p-5">
+                <h3 className="text-red-400 font-bold mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />Emergency — Immediate Action Required
+                </h3>
                 <div className="space-y-2">
-                  {highUrgencyProspects.slice(0, 4).map(p => (
-                    <Link key={p.id} to={`/internal/prospect/${p.id}`}
-                      className="flex items-center justify-between p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg hover:border-red-500/40 transition-colors">
-                      <span className="text-white text-sm truncate">{p.name}</span>
-                      <span className="text-red-400 text-xs font-bold flex-shrink-0 ml-2">{p.lead_score}</span>
+                  {tickets.filter(t => t.priority === 'emergency' && t.status !== 'completed' && t.status !== 'cancelled').map(t => (
+                    <Link key={t.id} to="/internal/work-orders"
+                      className="flex items-center justify-between p-3 bg-red-900/30 border border-red-700/40 rounded-lg hover:border-red-500/60 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-white text-sm font-medium truncate">{t.title}</p>
+                        {t.customer_name && <p className="text-red-300 text-xs mt-0.5">{t.customer_name}</p>}
+                      </div>
+                      <span className="text-red-400 text-xs flex-shrink-0 ml-2 font-bold">NOW →</span>
                     </Link>
                   ))}
-                  {highUrgencyProspects.length > 4 && (
-                    <Link to="/internal/leads" className="text-amber-400 text-xs hover:text-amber-300">+{highUrgencyProspects.length - 4} more →</Link>
+                </div>
+              </div>
+            )}
+
+            {/* Open Work Orders */}
+            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white font-bold flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-amber-400" />Open Work Orders
+                </h3>
+                <Link to="/internal/work-orders" className="text-purple-400 hover:text-purple-300 text-xs">View All →</Link>
+              </div>
+              {openTickets.length === 0 ? (
+                <div className="flex items-center gap-2 text-green-400 text-sm"><CheckCircle className="w-4 h-4" />All caught up</div>
+              ) : (
+                <div className="space-y-2">
+                  {openTickets.slice(0, 5).map(t => (
+                    <Link key={t.id} to="/internal/work-orders"
+                      className="flex items-center gap-3 p-2.5 bg-gray-700/50 border border-gray-600 rounded-lg hover:border-purple-600/50 transition-colors">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${t.priority === 'emergency' ? 'bg-red-400' : t.priority === 'high' ? 'bg-amber-400' : t.priority === 'medium' ? 'bg-blue-400' : 'bg-gray-400'}`}></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm truncate">{t.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {t.customer_name && <span className="text-gray-400 text-xs truncate">{t.customer_name}</span>}
+                          <span className={`text-xs capitalize flex-shrink-0 ${t.status === 'in_progress' ? 'text-amber-400' : t.status === 'scheduled' ? 'text-purple-400' : 'text-gray-500'}`}>{t.status?.replace('_', ' ')}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                  {openTickets.length > 5 && (
+                    <Link to="/internal/work-orders" className="text-purple-400 text-xs hover:text-purple-300">+{openTickets.length - 5} more work orders →</Link>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Open Tickets */}
-            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
-              <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-amber-400" />Open Tickets
-              </h3>
-              {openTickets.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-400 text-sm"><CheckCircle className="w-4 h-4" />No open tickets</div>
-              ) : (
-                <div className="space-y-2">
-                  {openTickets.slice(0, 4).map(t => (
-                    <div key={t.id} className="p-2.5 bg-gray-700/50 border border-gray-600 rounded-lg">
-                      <p className="text-white text-sm truncate">{t.title}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${t.priority === 'high' ? 'bg-red-500/20 text-red-400' : t.priority === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>{t.priority}</span>
-                        <span className="text-gray-500 text-xs">{t.status}</span>
-                      </div>
-                    </div>
-                  ))}
-                  {openTickets.length > 4 && <p className="text-gray-500 text-xs">+{openTickets.length - 4} more tickets</p>}
+            {/* High Urgency Prospects */}
+            {highUrgencyProspects.length > 0 && (
+              <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-white font-bold flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />High Urgency Prospects
+                  </h3>
+                  <Link to="/internal/leads" className="text-purple-400 hover:text-purple-300 text-xs">View All →</Link>
                 </div>
-              )}
-            </div>
+                <div className="space-y-2">
+                  {highUrgencyProspects.slice(0, 4).map(p => (
+                    <Link key={p.id} to={'/internal/prospect/' + p.id}
+                      className="flex items-center justify-between p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:border-amber-500/40 transition-colors">
+                      <span className="text-white text-sm truncate">{p.name}</span>
+                      <span className="text-amber-400 text-xs font-bold flex-shrink-0 ml-2">{p.lead_score}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
