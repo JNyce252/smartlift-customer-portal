@@ -273,6 +273,7 @@ const InternalDashboard = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
             { to: null, gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Search, title: 'Find New Leads', sub: 'Auto-prospect Texas' },
+            { to: '/internal/work-orders', gradient: 'from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800', icon: Wrench, title: 'Work Orders', sub: 'Manage service jobs' },
             { to: '/internal/customers', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: Users, title: 'Customers', sub: 'Manage accounts' },
             { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
             { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },

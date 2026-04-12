@@ -12,6 +12,7 @@ import Analytics from './pages/internal/Analytics';
 import RouteOptimizer from './pages/internal/RouteOptimizer';
 import TeamManagement from './pages/internal/TeamManagement';
 import Pipeline from './pages/internal/Pipeline';
+import WorkOrders from './pages/internal/WorkOrders';
 import Profile from './pages/internal/Profile';
 import CustomerDashboard from './pages/customer/CustomerDashboard';
 import MyElevators from './pages/customer/MyElevators';
@@ -37,6 +38,7 @@ function App() {
           <Route path="/internal/team" element={<PrivateRoute requiredRole="company"><TeamManagement /></PrivateRoute>} />
           <Route path="/internal/profile" element={<PrivateRoute requiredRole="company"><Profile /></PrivateRoute>} />
           <Route path="/internal/pipeline" element={<PrivateRoute requiredRole="company"><Pipeline /></PrivateRoute>} />
+          <Route path="/internal/work-orders" element={<PrivateRoute requiredRole="company"><WorkOrders /></PrivateRoute>} />
           <Route path="/customer/dashboard" element={<PrivateRoute requiredRole="customer"><CustomerDashboard /></PrivateRoute>} />
           <Route path="/customer/elevators" element={<PrivateRoute requiredRole="customer"><MyElevators /></PrivateRoute>} />
           <Route path="/customer/service-request" element={<PrivateRoute requiredRole="customer"><ServiceRequest /></PrivateRoute>} />
