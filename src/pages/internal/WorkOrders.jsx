@@ -6,6 +6,7 @@ import { exportWorkOrdersCSV } from '../../utils/csvExport';
 import { Building2, Wrench, Plus, X, Clock, CheckCircle, AlertTriangle, Search, Filter, ChevronDown, User, Calendar, Tool , Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
+import NotificationBell from '../../components/common/NotificationBell';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -168,6 +169,7 @@ const WorkOrders = () => {
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2">
                 <Plus className="w-4 h-4" />New Work Order
               </button>
+              <NotificationBell />
               <UserMenu />
             </div>
           </div>

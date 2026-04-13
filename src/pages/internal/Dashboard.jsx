@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle, Settings, Wrench, Calendar , FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
+import NotificationBell from '../../components/common/NotificationBell';
 import { api } from '../../services/api';
 
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY || 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
