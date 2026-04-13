@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, DollarSign, Plus, X, CheckCircle, Clock, AlertTriangle, Search, FileText, Send, Download } from 'lucide-react';
+import { generateInvoicePDF } from '../../utils/pdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
 
@@ -419,6 +420,10 @@ const Invoices = () => {
                   <span className="text-sm font-medium">Paid on {showDetail.paid_date ? new Date(showDetail.paid_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}</span>
                 </div>
               )}
+              <button onClick={() => generateInvoicePDF(showDetail)}
+                className="w-full py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
+                <Download className="w-4 h-4" />Download PDF
+              </button>
             </div>
           </div>
         </div>

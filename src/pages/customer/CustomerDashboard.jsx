@@ -48,7 +48,7 @@ const CustomerDashboard = () => {
     : null;
 
   const greeting = () => {
-    const h = new Date().getHours();
+    const h = parseInt(new Date().toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/Chicago' }));
     if (h < 12) return 'Good morning';
     if (h < 17) return 'Good afternoon';
     return 'Good evening';

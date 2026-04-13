@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { generateWorkOrderPDF } from '../../utils/pdfGenerator';
 import { Building2, Wrench, Plus, X, Clock, CheckCircle, AlertTriangle, Search, Filter, ChevronDown, User, Calendar, Tool } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';

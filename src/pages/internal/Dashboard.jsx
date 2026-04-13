@@ -235,7 +235,7 @@ const InternalDashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-3xl font-bold text-white mb-1">
-                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! 👋
+                {parseInt(new Date().toLocaleTimeString('en-US', {hour: '2-digit', hour12: false, timeZone: 'America/Chicago'})) < 12 ? 'Good morning' : parseInt(new Date().toLocaleTimeString('en-US', {hour: '2-digit', hour12: false, timeZone: 'America/Chicago'})) < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! 👋
               </h2>
               <p className="text-gray-400">
                 {prospects.length === 0 

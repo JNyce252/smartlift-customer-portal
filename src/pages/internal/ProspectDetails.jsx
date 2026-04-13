@@ -3,6 +3,7 @@ import UserMenu from '../../components/common/UserMenu';
 import { Link, useParams } from 'react-router-dom';
 import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { generateProposalPDF } from '../../utils/pdfGenerator';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const GOOGLE_CSE_KEY = 'AIzaSyAeyv6UlP9Pw6k9nXRE3KDAge6EE4dbygg';
@@ -505,6 +506,12 @@ const ProspectDetails = () => {
     const body = introContent.replace(/Subject:.+\n/, '').trim();
     const mailtoUrl = `mailto:${introEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailtoUrl;
+  };
+
+  const downloadProposalPDF = () => {
+    if (proposal && prospect) {
+      generateProposalPDF(prospect, proposal);
+    }
   };
 
   const printProposal = () => {
@@ -1596,7 +1603,11 @@ const ProspectDetails = () => {
                       className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">
                       Copy
                     </button>
-                    <button onClick={printProposal}
+                    <button onClick={downloadProposalPDF}
+              className="px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 border border-purple-700/30 rounded-lg text-xs flex items-center gap-1.5 transition-colors">
+              <Download className="w-3.5 h-3.5" />Download PDF
+            </button>
+            <button onClick={printProposal}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
                       Download PDF
                     </button>
