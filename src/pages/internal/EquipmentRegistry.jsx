@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, Plus, X, Search, AlertTriangle, CheckCircle, Wrench, Calendar, Hash, Layers, ArrowUpDown, Shield, TrendingUp, Edit2 } from 'lucide-react';
+import { Building2, Plus, X, Search, AlertTriangle, CheckCircle, Wrench, Calendar, Hash, Layers, ArrowUpDown, Shield, TrendingUp, Edit2 , Download } from 'lucide-react';
 import { exportEquipmentCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
