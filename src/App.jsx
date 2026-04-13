@@ -17,6 +17,7 @@ import MaintenanceScheduling from './pages/internal/MaintenanceScheduling';
 import Invoices from './pages/internal/Invoices';
 import EquipmentRegistry from './pages/internal/EquipmentRegistry';
 import InternalDocuments from './pages/internal/Documents';
+import TDLRIntelligence from './pages/internal/TDLRIntelligence';
 import Profile from './pages/internal/Profile';
 import CustomerDashboard from './pages/customer/CustomerDashboard';
 import MyElevators from './pages/customer/MyElevators';
@@ -47,6 +48,7 @@ function App() {
           <Route path="/internal/invoices" element={<PrivateRoute requiredRole="company"><Invoices /></PrivateRoute>} />
           <Route path="/internal/equipment" element={<PrivateRoute requiredRole="company"><EquipmentRegistry /></PrivateRoute>} />
           <Route path="/internal/documents" element={<PrivateRoute requiredRole="company"><InternalDocuments /></PrivateRoute>} />
+          <Route path="/internal/tdlr" element={<PrivateRoute requiredRole="company"><TDLRIntelligence /></PrivateRoute>} />
           <Route path="/customer/dashboard" element={<PrivateRoute requiredRole="customer"><CustomerDashboard /></PrivateRoute>} />
           <Route path="/customer/elevators" element={<PrivateRoute requiredRole="customer"><MyElevators /></PrivateRoute>} />
           <Route path="/customer/service-request" element={<PrivateRoute requiredRole="customer"><ServiceRequest /></PrivateRoute>} />

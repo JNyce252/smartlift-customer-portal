@@ -303,7 +303,12 @@ const Analytics = () => {
                 </div>
               ))}
             </div>
-            {(tdlrStats.expired_certs > 0 || tdlrStats.expiring_soon > 0) && (
+            {true && (
+                  <Link to="/internal/tdlr" className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors mt-2 mb-2">
+                    View TDLR Intelligence →
+                  </Link>
+                )}
+                {(tdlrStats.expired_certs > 0 || tdlrStats.expiring_soon > 0) && (
               <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
                 <p className="text-amber-400 text-sm">

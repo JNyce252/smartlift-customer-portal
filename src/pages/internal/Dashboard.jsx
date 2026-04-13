@@ -282,6 +282,7 @@ const InternalDashboard = () => {
             { to: '/internal/documents', gradient: 'from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800', icon: FileText, title: 'Documents', sub: 'Contracts & certificates' },
             { to: '/internal/invoices', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: DollarSign, title: 'Invoices', sub: 'Billing & payments' },
             { to: '/internal/equipment', gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Building2, title: 'Equipment', sub: 'Elevator registry' },
+            { to: '/internal/tdlr', gradient: 'from-red-600 to-red-700 hover:from-red-700 hover:to-red-800', icon: AlertTriangle, title: 'TDLR Intelligence', sub: 'Expiring certificates' },
             { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
             { to: '/internal/profile', gradient: 'from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800', icon: Users, title: 'Profile', sub: 'Company settings' },
           ].map(({ to, gradient, icon: Icon, title, sub }) => (
