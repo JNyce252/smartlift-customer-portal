@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
-import { Search, Building2, MapPin, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter } from 'lucide-react';
+import { Search, Building2, MapPin, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter , Download } from 'lucide-react';
+import { exportProspectsCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 

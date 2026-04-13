@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText } from 'lucide-react';
+import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { generateProposalPDF } from '../../utils/pdfGenerator';
 

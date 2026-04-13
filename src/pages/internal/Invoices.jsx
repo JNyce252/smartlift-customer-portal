@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, DollarSign, Plus, X, CheckCircle, Clock, AlertTriangle, Search, FileText, Send, Download } from 'lucide-react';
 import { generateInvoicePDF } from '../../utils/pdfGenerator';
+import { exportInvoicesCSV } from '../../utils/csvExport';
+// already from '../../utils/pdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
 
@@ -127,6 +129,10 @@ const Invoices = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button onClick={() => exportInvoicesCSV(invoices)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2 transition-colors border border-gray-600">
+                <Download className="w-4 h-4" />Export CSV
+              </button>
               <button onClick={() => setShowCreate(true)}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
                 <Plus className="w-4 h-4" />New Invoice

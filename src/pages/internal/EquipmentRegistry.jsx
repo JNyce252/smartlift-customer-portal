@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Plus, X, Search, AlertTriangle, CheckCircle, Wrench, Calendar, Hash, Layers, ArrowUpDown, Shield, TrendingUp, Edit2 } from 'lucide-react';
+import { exportEquipmentCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
 import UserMenu from '../../components/common/UserMenu';
 
@@ -122,6 +123,10 @@ const EquipmentRegistry = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button onClick={() => exportEquipmentCSV(equipment)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm flex items-center gap-2 transition-colors border border-gray-600">
+                <Download className="w-4 h-4" />Export CSV
+              </button>
               <button onClick={() => setShowCreate(true)}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
                 <Plus className="w-4 h-4" />Add Elevator
