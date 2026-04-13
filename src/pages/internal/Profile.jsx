@@ -1,86 +1,154 @@
 import React, { useState, useEffect } from 'react';
-import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
-import { Building2, User, Phone, Mail, MapPin, Save, CheckCircle, Camera, Plus, Trash2, Briefcase } from 'lucide-react';
+import { Building2, User, Phone, Mail, MapPin, Save, CheckCircle, Plus, Trash2, Briefcase, Wrench, Shield, Star, X, Edit2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import UserMenu from '../../components/common/UserMenu';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
+const SPECIALIZATIONS = ['Traction Elevators', 'Hydraulic Elevators', 'Door Systems', 'Controls & Modernization', 'Safety Testing', 'TDLR Inspections', 'Emergency Repairs', 'Escalators'];
+const CERTIFICATIONS = ['TDLR Licensed', 'CET Certified', 'NAEC Member', 'OSHA 10', 'OSHA 30', 'CAT 1 Testing', 'CAT 5 Testing'];
+
+const inputCls = "w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 placeholder-gray-500 transition-colors";
+const labelCls = "block text-gray-400 text-xs font-medium uppercase tracking-wide mb-1.5";
+
 const Profile = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('company');
   const [profile, setProfile] = useState({
-    company_name: '', owner_name: '', email: '', phone: '',
-    website: '', address: '', city: '', state: '', tagline: '',
-    logo_url: '', bio: '', years_in_business: '', service_area: '',
-    tdlr_license: '', insurance_info: '', certifications: '', credentials: ''
+    company_name: '', bio: '', certifications: '', credentials: '',
+    service_area: '', years_in_business: '', tdlr_license: '',
+    phone: '', email: '', website: '', logo_url: ''
   });
   const [projects, setProjects] = useState([]);
-  const [newProject, setNewProject] = useState({ building_name: '', building_type: 'hotel', city: '', state: 'TX', scope: '', year_completed: new Date().getFullYear() });
+  const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [addingProject, setAddingProject] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
+  const [showAddTech, setShowAddTech] = useState(false);
+  const [editingTech, setEditingTech] = useState(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [savingTech, setSavingTech] = useState(false);
+  const [techError, setTechError] = useState(null);
+
+  const [newProject, setNewProject] = useState({
+    building_name: '', building_type: 'hotel', city: '', state: 'TX',
+    scope: '', year_completed: new Date().getFullYear()
+  });
+
+  const [techForm, setTechForm] = useState({
+    name: '', email: '', phone: '', tdlr_license_number: '',
+    certifications: [], specializations: [], hire_date: '', notes: '', status: 'active'
+  });
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+  };
 
   useEffect(() => {
-    const token = localStorage.getItem('smartlift_token');
-    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     Promise.all([
-      fetch(`${BASE_URL}/profile`, { headers }).then(r => r.json()),
-      fetch(`${BASE_URL}/projects`, { headers }).then(r => r.json()).catch(() => []),
-    ])
-    .then(([p, proj]) => {
-      if (p) setProfile(prev => ({ ...prev, ...p }));
+      fetch(BASE_URL + '/profile', { headers }).then(r => r.json()),
+      fetch(BASE_URL + '/projects', { headers }).then(r => r.json()).catch(() => []),
+      fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()).catch(() => []),
+    ]).then(([prof, proj, techs]) => {
+      if (prof && !prof.error) setProfile(prof);
       setProjects(Array.isArray(proj) ? proj : []);
-    })
-    .catch(console.error)
-    .finally(() => setLoading(false));
+      setTechnicians(Array.isArray(techs) ? techs : []);
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
-      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      const res = await fetch(`${BASE_URL}/profile`, { method: 'PATCH', headers, body: JSON.stringify(profile) });
-      const updated = await res.json();
-      setProfile(prev => ({ ...prev, ...updated }));
+      await fetch(BASE_URL + '/profile', { method: 'POST', headers, body: JSON.stringify(profile) });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) { alert('Failed to save: ' + e.message); }
+      setTimeout(() => setSaved(false), 2500);
+    } catch(e) { console.error(e); }
     finally { setSaving(false); }
   };
 
-  const addProject = async () => {
+  const handleAddProject = async () => {
     if (!newProject.building_name.trim()) return;
     setAddingProject(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
-      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-      const res = await fetch(`${BASE_URL}/projects`, { method: 'POST', headers, body: JSON.stringify(newProject) });
-      const saved = await res.json();
-      setProjects(prev => [saved, ...prev]);
+      const res = await fetch(BASE_URL + '/projects', { method: 'POST', headers, body: JSON.stringify(newProject) });
+      const data = await res.json();
+      setProjects(prev => [data, ...prev]);
       setNewProject({ building_name: '', building_type: 'hotel', city: '', state: 'TX', scope: '', year_completed: new Date().getFullYear() });
       setShowAddProject(false);
-    } catch (e) { alert('Failed to add project: ' + e.message); }
+    } catch(e) { console.error(e); }
     finally { setAddingProject(false); }
   };
 
-  const deleteProject = async (id) => {
-    const token = localStorage.getItem('smartlift_token');
-    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-    await fetch(`${BASE_URL}/projects/${id}`, { method: 'DELETE', headers });
-    setProjects(prev => prev.filter(p => p.id !== id));
+  const handleDeleteProject = async (id) => {
+    try {
+      await fetch(BASE_URL + '/projects/' + id, { method: 'DELETE', headers });
+      setProjects(prev => prev.filter(p => p.id !== id));
+    } catch(e) {}
   };
 
-  const Field = ({ label, field, type = 'text', placeholder, half }) => (
-    <div className={half ? '' : 'col-span-2 md:col-span-1'}>
-      <label className="text-gray-400 text-sm mb-1 block">{label}</label>
-      <input type={type} value={profile[field] || ''} onChange={e => setProfile(prev => ({ ...prev, [field]: e.target.value }))}
-        placeholder={placeholder}
-        className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
-    </div>
-  );
+  const resetTechForm = () => {
+    setTechForm({ name: '', email: '', phone: '', tdlr_license_number: '', certifications: [], specializations: [], hire_date: '', notes: '', status: 'active' });
+    setEditingTech(null);
+    setTechError(null);
+  };
+
+  const openEditTech = (tech) => {
+    setTechForm({
+      name: tech.name || '',
+      email: tech.email || '',
+      phone: tech.phone || '',
+      tdlr_license_number: tech.tdlr_license_number || '',
+      certifications: tech.certifications || [],
+      specializations: tech.specializations || [],
+      hire_date: tech.hire_date ? tech.hire_date.split('T')[0] : '',
+      notes: tech.notes || '',
+      status: tech.status || 'active'
+    });
+    setEditingTech(tech);
+    setShowAddTech(true);
+  };
+
+  const handleSaveTech = async () => {
+    if (!techForm.name.trim()) { setTechError('Name is required'); return; }
+    setSavingTech(true);
+    setTechError(null);
+    try {
+      if (editingTech) {
+        const res = await fetch(BASE_URL + '/technicians/' + editingTech.id, { method: 'PATCH', headers, body: JSON.stringify(techForm) });
+        const data = await res.json();
+        setTechnicians(prev => prev.map(t => t.id === editingTech.id ? data : t));
+      } else {
+        const res = await fetch(BASE_URL + '/technicians', { method: 'POST', headers, body: JSON.stringify(techForm) });
+        const data = await res.json();
+        setTechnicians(prev => [...prev, data]);
+      }
+      setShowAddTech(false);
+      resetTechForm();
+    } catch(e) { setTechError('Failed to save technician'); }
+    finally { setSavingTech(false); }
+  };
+
+  const handleDeactivateTech = async (id) => {
+    try {
+      await fetch(BASE_URL + '/technicians/' + id, { method: 'DELETE', headers });
+      setTechnicians(prev => prev.map(t => t.id === id ? { ...t, status: 'inactive' } : t));
+    } catch(e) {}
+  };
+
+  const toggleArrayItem = (arr, item) =>
+    arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item];
+
+  const p = k => v => setProfile(prev => ({ ...prev, [k]: v }));
+  const tf = k => v => setTechForm(prev => ({ ...prev, [k]: v }));
+
+  const TABS = [
+    { id: 'company', label: 'Company Info', icon: Building2 },
+    { id: 'technicians', label: 'Technicians', icon: Wrench, badge: technicians.filter(t => t.status === 'active').length },
+    { id: 'projects', label: 'Completed Projects', icon: Briefcase, badge: projects.length },
+  ];
 
   if (loading) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -89,212 +157,414 @@ const Profile = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="min-h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               <Link to="/internal/dashboard"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div><h1 className="text-xl font-bold text-white">Company Profile</h1><p className="text-xs text-gray-400">{user?.email}</p></div>
+              <div>
+                <h1 className="text-xl font-bold text-white">Company Profile</h1>
+                <p className="text-xs text-gray-400">{profile.company_name || user?.email}</p>
+              </div>
             </div>
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-white mb-2">Company Profile</h2>
-          <p className="text-gray-400">Used in proposals, introduction emails, and reports</p>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-gray-800 p-1 rounded-xl border border-gray-700 mb-8 w-fit">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+                <Icon className="w-4 h-4" />
+                {tab.label}
+                {tab.badge > 0 && (
+                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-gray-600 text-gray-300'}`}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Logo & Identity */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Camera className="w-5 h-5 text-purple-400" />Company Identity</h3>
-          <div className="flex items-center gap-6 mb-4">
-            <div className="w-24 h-24 bg-gray-700 rounded-xl border-2 border-dashed border-gray-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
-              {profile.logo_url ? <img src={profile.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Building2 className="w-10 h-10 text-gray-500" />}
-            </div>
-            <div className="flex-1">
-              <label className="text-gray-400 text-sm mb-1 block">Logo URL</label>
-              <input type="text" value={profile.logo_url || ''} onChange={e => setProfile(prev => ({ ...prev, logo_url: e.target.value }))}
-                placeholder="https://your-company.com/logo.png"
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-gray-400 text-sm mb-1 block">Company Tagline</label>
-              <input type="text" value={profile.tagline || ''} onChange={e => setProfile(prev => ({ ...prev, tagline: e.target.value }))}
-                placeholder="Texas's Premier Elevator Service Provider"
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
-            </div>
-            <div>
-              <label className="text-gray-400 text-sm mb-1 block">Years in Business</label>
-              <input type="number" value={profile.years_in_business || ''} onChange={e => setProfile(prev => ({ ...prev, years_in_business: e.target.value }))}
-                placeholder="15"
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <label className="text-gray-400 text-sm mb-1 block">Company Bio</label>
-            <textarea value={profile.bio || ''} onChange={e => setProfile(prev => ({ ...prev, bio: e.target.value }))}
-              placeholder="Brief description of your company, what you do, and what makes you different..."
-              rows={3}
-              className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none" />
-          </div>
-        </div>
-
-        {/* Contact Info */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><User className="w-5 h-5 text-purple-400" />Contact Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="Company Name" field="company_name" placeholder="Southwest Cabs Elevator Services" />
-            <Field label="Owner / Primary Contact" field="owner_name" placeholder="Derald Armstrong" />
-            <Field label="Email Address" field="email" type="email" placeholder="derald@swcabs.com" />
-            <Field label="Phone Number" field="phone" placeholder="972-974-7005" />
-            <Field label="Website" field="website" placeholder="https://swcabs.com" />
-            <Field label="Service Area" field="service_area" placeholder="Dallas-Fort Worth, Houston, Austin" />
-            <Field label="Address" field="address" placeholder="123 Main St" />
-            <Field label="City" field="city" placeholder="Dallas" />
-            <Field label="State" field="state" placeholder="TX" />
-          </div>
-        </div>
-
-        {/* Credentials */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2"><CheckCircle className="w-5 h-5 text-purple-400" />Credentials & Certifications</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="TDLR License Number" field="tdlr_license" placeholder="e.g. EL-12345" />
-            <Field label="Insurance Info" field="insurance_info" placeholder="e.g. $2M General Liability" />
-          </div>
-          <div className="mt-4">
-            <label className="text-gray-400 text-sm mb-1 block">Certifications & Associations</label>
-            <textarea value={profile.certifications || ''} onChange={e => setProfile(prev => ({ ...prev, certifications: e.target.value }))}
-              placeholder="e.g. NAEC member, ASME certified, OSHA compliant..."
-              rows={2}
-              className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-none" />
-          </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Credentials</label>
-              <textarea value={profile.credentials || ''} onChange={e => setProfile(prev => ({ ...prev, credentials: e.target.value }))}
-                placeholder="e.g. Licensed Texas elevator contractor with 20+ years experience in commercial maintenance, emergency repair, and modernization"
-                rows={3} className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" />
-            </div>
-        </div>
-
-        {/* Completed Projects */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-bold flex items-center gap-2"><Briefcase className="w-5 h-5 text-purple-400" />Completed Projects <span className="text-gray-500 text-sm font-normal">— used in proposals & intro emails</span></h3>
-            <button onClick={() => setShowAddProject(!showAddProject)}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm flex items-center gap-2">
-              <Plus className="w-4 h-4" />Add Project
-            </button>
-          </div>
-
-          {showAddProject && (
-            <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 mb-4">
-              <h4 className="text-white font-medium mb-3">New Project</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Building Name</label>
-                  <input type="text" value={newProject.building_name} onChange={e => setNewProject(p => ({ ...p, building_name: e.target.value }))}
-                    placeholder="Hilton Garden Inn Dallas"
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+        {/* Company Info Tab */}
+        {activeTab === 'company' && (
+          <div className="space-y-6">
+            {/* Identity */}
+            <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
+              <h3 className="text-white font-bold mb-5 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-purple-400" />Company Identity
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className={labelCls}>Company Name</label>
+                  <input value={profile.company_name || ''} onChange={e => p('company_name')(e.target.value)}
+                    placeholder="Southwest Cabs Elevator Services" className={inputCls} />
                 </div>
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Building Type</label>
-                  <select value={newProject.building_type} onChange={e => setNewProject(p => ({ ...p, building_type: e.target.value }))}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500">
-                    <option value="hotel">Hotel</option>
-                    <option value="office">Office Building</option>
-                    <option value="hospital">Hospital</option>
-                    <option value="apartment">Apartment Complex</option>
-                    <option value="government">Government</option>
-                    <option value="retail">Retail/Mall</option>
-                    <option value="other">Other</option>
+                  <label className={labelCls}>Years in Business</label>
+                  <input type="number" value={profile.years_in_business || ''} onChange={e => p('years_in_business')(e.target.value)}
+                    placeholder="20" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>TDLR License Number</label>
+                  <input value={profile.tdlr_license || ''} onChange={e => p('tdlr_license')(e.target.value)}
+                    placeholder="TDLR License #" className={inputCls} />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Company Bio</label>
+                  <textarea value={profile.bio || ''} onChange={e => p('bio')(e.target.value)}
+                    placeholder="Describe your company, expertise, and what sets you apart..." rows={4}
+                    className={inputCls + " resize-none"} />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Certifications</label>
+                  <input value={profile.certifications || ''} onChange={e => p('certifications')(e.target.value)}
+                    placeholder="TDLR Licensed, NAEC Member, Fully Insured..." className={inputCls} />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Credentials & Experience</label>
+                  <textarea value={profile.credentials || ''} onChange={e => p('credentials')(e.target.value)}
+                    placeholder="Detail your specific credentials and experience..." rows={3}
+                    className={inputCls + " resize-none"} />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Service Area</label>
+                  <input value={profile.service_area || ''} onChange={e => p('service_area')(e.target.value)}
+                    placeholder="Dallas, Fort Worth, Plano, Irving, Arlington..." className={inputCls} />
+                </div>
+              </div>
+            </div>
+
+            {/* Contact */}
+            <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
+              <h3 className="text-white font-bold mb-5 flex items-center gap-2">
+                <User className="w-5 h-5 text-purple-400" />Contact Information
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Phone</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                    <input value={profile.phone || ''} onChange={e => p('phone')(e.target.value)}
+                      placeholder="972-974-7005" className={inputCls + " pl-9"} />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                    <input value={profile.email || ''} onChange={e => p('email')(e.target.value)}
+                      placeholder="derald@swcabs.com" className={inputCls + " pl-9"} />
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Website</label>
+                  <input value={profile.website || ''} onChange={e => p('website')(e.target.value)}
+                    placeholder="https://yourwebsite.com" className={inputCls} />
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <button onClick={handleSave} disabled={saving}
+              className="w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors text-lg">
+              {saved ? <><CheckCircle className="w-6 h-6" />Profile Saved!</> : saving ? 'Saving...' : <><Save className="w-6 h-6" />Save Profile</>}
+            </button>
+          </div>
+        )}
+
+        {/* Technicians Tab */}
+        {activeTab === 'technicians' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <p className="text-gray-400 text-sm">{technicians.filter(t => t.status === 'active').length} active · {technicians.filter(t => t.status === 'inactive').length} inactive</p>
+              </div>
+              <button onClick={() => { resetTechForm(); setShowAddTech(true); }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+                <Plus className="w-4 h-4" />Add Technician
+              </button>
+            </div>
+
+            {technicians.length === 0 ? (
+              <div className="text-center py-16 border border-dashed border-gray-700 rounded-xl">
+                <Wrench className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-400 text-lg font-medium">No technicians added yet</p>
+                <p className="text-gray-500 text-sm mt-1 mb-4">Add your field technicians to assign them to work orders</p>
+                <button onClick={() => { resetTechForm(); setShowAddTech(true); }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm">
+                  Add First Technician
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {technicians.map(tech => (
+                  <div key={tech.id}
+                    className={`bg-gray-800 rounded-xl border p-5 transition-colors ${tech.status === 'inactive' ? 'border-gray-700 opacity-60' : 'border-gray-700 hover:border-gray-600'}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 bg-purple-900/30 rounded-xl flex items-center justify-center border border-purple-700/30 flex-shrink-0">
+                          <span className="text-purple-400 font-bold text-lg">{tech.name[0].toUpperCase()}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <h3 className="text-white font-semibold">{tech.name}</h3>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${tech.status === 'active' ? 'bg-green-900/30 text-green-400 border-green-700/30' : 'bg-gray-700 text-gray-400 border-gray-600'}`}>
+                              {tech.status}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 flex-wrap text-sm text-gray-400">
+                            {tech.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" />{tech.phone}</span>}
+                            {tech.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" />{tech.email}</span>}
+                            {tech.tdlr_license_number && <span className="flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-purple-400" />{tech.tdlr_license_number}</span>}
+                          </div>
+                          {tech.specializations?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {tech.specializations.map(s => (
+                                <span key={s} className="px-2 py-0.5 bg-blue-900/20 text-blue-400 border border-blue-700/30 rounded text-xs">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                          {tech.certifications?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {tech.certifications.map(c => (
+                                <span key={c} className="px-2 py-0.5 bg-green-900/20 text-green-400 border border-green-700/30 rounded text-xs flex items-center gap-1">
+                                  <Star className="w-2.5 h-2.5" />{c}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => openEditTech(tech)}
+                          className="p-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        {tech.status === 'active' && (
+                          <button onClick={() => handleDeactivateTech(tech.id)}
+                            className="p-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Projects Tab */}
+        {activeTab === 'projects' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <p className="text-gray-400 text-sm">{projects.length} completed project{projects.length !== 1 ? 's' : ''}</p>
+              <button onClick={() => setShowAddProject(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+                <Plus className="w-4 h-4" />Add Project
+              </button>
+            </div>
+
+            {projects.length === 0 ? (
+              <div className="text-center py-16 border border-dashed border-gray-700 rounded-xl">
+                <Briefcase className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                <p className="text-gray-400 text-lg font-medium">No projects added yet</p>
+                <p className="text-gray-500 text-sm mt-1 mb-4">Add completed projects to strengthen your proposals</p>
+                <button onClick={() => setShowAddProject(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm">
+                  Add First Project
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {projects.map(proj => (
+                  <div key={proj.id} className="bg-gray-800 rounded-xl border border-gray-700 p-5 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="text-white font-semibold">{proj.building_name}</h3>
+                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 border border-gray-600 rounded text-xs capitalize">{proj.building_type}</span>
+                        <span className="text-gray-400 text-sm">{proj.year_completed}</span>
+                      </div>
+                      {proj.city && <p className="text-gray-400 text-sm flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{proj.city}, {proj.state}</p>}
+                      {proj.scope && <p className="text-gray-500 text-sm mt-1">{proj.scope}</p>}
+                    </div>
+                    <button onClick={() => handleDeleteProject(proj.id)}
+                      className="p-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg flex-shrink-0 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add/Edit Technician Modal */}
+      {showAddTech && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white">{editingTech ? 'Edit Technician' : 'Add Technician'}</h2>
+              <button onClick={() => { setShowAddTech(false); resetTechForm(); }} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-5">
+              {techError && (
+                <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400" />
+                  <p className="text-red-400 text-sm">{techError}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className={labelCls}>Full Name *</label>
+                  <input value={techForm.name} onChange={e => tf('name')(e.target.value)}
+                    placeholder="John Smith" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Phone</label>
+                  <input value={techForm.phone} onChange={e => tf('phone')(e.target.value)}
+                    placeholder="972-555-0100" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Email</label>
+                  <input value={techForm.email} onChange={e => tf('email')(e.target.value)}
+                    placeholder="john@swcabs.com" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>TDLR License Number</label>
+                  <input value={techForm.tdlr_license_number} onChange={e => tf('tdlr_license_number')(e.target.value)}
+                    placeholder="License #" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Hire Date</label>
+                  <input type="date" value={techForm.hire_date} onChange={e => tf('hire_date')(e.target.value)}
+                    className={inputCls} />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Specializations</label>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIALIZATIONS.map(s => (
+                    <button key={s} onClick={() => tf('specializations')(toggleArrayItem(techForm.specializations, s))}
+                      className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${techForm.specializations.includes(s) ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500'}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Certifications</label>
+                <div className="flex flex-wrap gap-2">
+                  {CERTIFICATIONS.map(c => (
+                    <button key={c} onClick={() => tf('certifications')(toggleArrayItem(techForm.certifications, c))}
+                      className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${techForm.certifications.includes(c) ? 'bg-green-700 border-green-600 text-white' : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500'}`}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Notes</label>
+                <textarea value={techForm.notes} onChange={e => tf('notes')(e.target.value)}
+                  placeholder="Any additional notes about this technician..." rows={3}
+                  className={inputCls + " resize-none"} />
+              </div>
+
+              {editingTech && (
+                <div>
+                  <label className={labelCls}>Status</label>
+                  <select value={techForm.status} onChange={e => tf('status')(e.target.value)} className={inputCls}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setShowAddTech(false); resetTechForm(); }}
+                  className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors">Cancel</button>
+                <button onClick={handleSaveTech} disabled={savingTech || !techForm.name.trim()}
+                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors">
+                  {savingTech ? 'Saving...' : editingTech ? 'Update Technician' : 'Add Technician'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Project Modal */}
+      {showAddProject && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white">Add Completed Project</h2>
+              <button onClick={() => setShowAddProject(false)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className={labelCls}>Building Name *</label>
+                <input value={newProject.building_name} onChange={e => setNewProject(p => ({ ...p, building_name: e.target.value }))}
+                  placeholder="e.g. Hyatt Regency Dallas" className={inputCls} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Building Type</label>
+                  <select value={newProject.building_type} onChange={e => setNewProject(p => ({ ...p, building_type: e.target.value }))} className={inputCls}>
+                    {['hotel', 'hospital', 'office', 'apartment', 'retail', 'government', 'theme_park', 'other'].map(t => (
+                      <option key={t} value={t}>{t.replace('_', ' ')}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">City</label>
-                  <input type="text" value={newProject.city} onChange={e => setNewProject(p => ({ ...p, city: e.target.value }))}
-                    placeholder="Dallas"
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                  <label className={labelCls}>Year Completed</label>
+                  <input type="number" value={newProject.year_completed} onChange={e => setNewProject(p => ({ ...p, year_completed: e.target.value }))}
+                    className={inputCls} />
                 </div>
                 <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Year Completed</label>
-                  <input type="number" value={newProject.year_completed} onChange={e => setNewProject(p => ({ ...p, year_completed: e.target.value }))}
-                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500" />
+                  <label className={labelCls}>City</label>
+                  <input value={newProject.city} onChange={e => setNewProject(p => ({ ...p, city: e.target.value }))}
+                    placeholder="Dallas" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>State</label>
+                  <input value={newProject.state} onChange={e => setNewProject(p => ({ ...p, state: e.target.value }))}
+                    placeholder="TX" className={inputCls} />
                 </div>
               </div>
-              <div className="mb-3">
-                <label className="text-gray-400 text-xs mb-1 block">Scope of Work</label>
-                <textarea value={newProject.scope} onChange={e => setNewProject(p => ({ ...p, scope: e.target.value }))}
-                  placeholder="e.g. Full modernization of 4 passenger elevators, installed new controls and cab interiors"
-                  rows={2}
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-purple-500 resize-none" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={addProject} disabled={addingProject || !newProject.building_name.trim()}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm">
-                  {addingProject ? 'Saving...' : 'Save Project'}
-                </button>
-                <button onClick={() => setShowAddProject(false)} className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-sm">Cancel</button>
-              </div>
-            </div>
-          )}
-
-          {projects.length === 0 ? (
-            <div className="text-center py-8 border border-dashed border-gray-600 rounded-lg">
-              <Briefcase className="w-10 h-10 text-gray-600 mx-auto mb-2" />
-              <p className="text-gray-400 text-sm">No projects yet — add completed jobs to strengthen your proposals</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {projects.map(project => (
-                <div key={project.id} className="flex items-start justify-between bg-gray-700/50 rounded-lg p-4 border border-gray-600">
-                  <div>
-                    <p className="text-white font-medium">{project.building_name}</p>
-                    <p className="text-gray-400 text-sm">{project.building_type} — {project.city}, {project.state} — {project.year_completed}</p>
-                    {project.scope && <p className="text-gray-500 text-xs mt-1">{project.scope}</p>}
-                  </div>
-                  <button onClick={() => deleteProject(project.id)} className="text-red-400 hover:text-red-300 ml-4 flex-shrink-0">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Preview */}
-        <div className="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
-          <h3 className="text-white font-bold mb-4">Preview — How it appears in proposals</h3>
-          <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-5">
-            <div className="flex items-center gap-4 mb-3">
-              {profile.logo_url ? <img src={profile.logo_url} alt="Logo" className="w-12 h-12 object-contain" /> : <div className="w-12 h-12 bg-purple-600/30 rounded-lg flex items-center justify-center"><Building2 className="w-6 h-6 text-purple-400" /></div>}
               <div>
-                <p className="text-white font-bold text-lg">{profile.company_name || 'Your Company Name'}</p>
-                <p className="text-purple-300 text-sm">{profile.tagline || 'Your tagline here'}</p>
+                <label className={labelCls}>Scope of Work</label>
+                <textarea value={newProject.scope} onChange={e => setNewProject(p => ({ ...p, scope: e.target.value }))}
+                  placeholder="Describe the work performed..." rows={3}
+                  className={inputCls + " resize-none"} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowAddProject(false)}
+                  className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors">Cancel</button>
+                <button onClick={handleAddProject} disabled={addingProject || !newProject.building_name.trim()}
+                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors">
+                  {addingProject ? 'Saving...' : 'Add Project'}
+                </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-              <div className="flex items-center gap-2 text-gray-300"><User className="w-3.5 h-3.5 text-purple-400" />{profile.owner_name || 'Owner Name'}</div>
-              <div className="flex items-center gap-2 text-gray-300"><Phone className="w-3.5 h-3.5 text-purple-400" />{profile.phone || 'Phone'}</div>
-              <div className="flex items-center gap-2 text-gray-300"><Mail className="w-3.5 h-3.5 text-purple-400" />{profile.email || 'Email'}</div>
-              <div className="flex items-center gap-2 text-gray-300"><MapPin className="w-3.5 h-3.5 text-purple-400" />{profile.city || 'City'}, {profile.state || 'ST'}</div>
-            </div>
-            {profile.bio && <p className="text-gray-400 text-xs mt-2 italic">"{profile.bio}"</p>}
           </div>
         </div>
-
-        <button onClick={handleSave} disabled={saving}
-          className="w-full py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3">
-          {saved ? <><CheckCircle className="w-6 h-6" />Profile Saved!</> : saving ? 'Saving...' : <><Save className="w-6 h-6" />Save Profile</>}
-        </button>
-      </div>
+      )}
     </div>
   );
 };

@@ -52,6 +52,7 @@ const WorkOrders = () => {
     parts_replaced: '', next_service_date: '', cost: ''
   });
   const [savingLog, setSavingLog] = useState(false);
+  const [technicians, setTechnicians] = useState([]);
 
   const headers = {
     'Content-Type': 'application/json',
@@ -60,12 +61,14 @@ const WorkOrders = () => {
 
   const fetchData = async () => {
     try {
-      const [wo, cust] = await Promise.all([
+      const [wo, cust, techs] = await Promise.all([
         fetch(BASE_URL + '/work-orders', { headers }).then(r => r.json()),
         fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
+        fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()).catch(() => []),
       ]);
       setWorkOrders(Array.isArray(wo) ? wo : []);
       setCustomers(Array.isArray(cust) ? cust : []);
+      setTechnicians(Array.isArray(techs) ? techs.filter(t => t.status === 'active') : []);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -298,9 +301,15 @@ const WorkOrders = () => {
                 </div>
                 <div>
                   <label className={labelCls}>Assigned Technician</label>
-                  <input value={form.assigned_technician} onChange={e => f('assigned_technician')(e.target.value)}
-                    placeholder="Technician name"
-                    className={inputCls} />
+                  <select value={form.assigned_technician} onChange={e => f('assigned_technician')(e.target.value)} className={inputCls}>
+                    <option value="">Select technician...</option>
+                    {technicians.map(t => <option key={t.id} value={t.name}>{t.name}{t.tdlr_license_number ? ' — ' + t.tdlr_license_number : ''}</option>)}
+                    <option value="__other__">Other (type name)</option>
+                  </select>
+                  {form.assigned_technician === '__other__' && (
+                    <input onChange={e => f('assigned_technician')(e.target.value)}
+                      placeholder="Enter technician name" className={inputCls + " mt-2"} />
+                  )}
                 </div>
                 <div>
                   <label className={labelCls}>Scheduled Date</label>
@@ -421,9 +430,15 @@ const WorkOrders = () => {
                   </div>
                   <div>
                     <label className={labelCls}>Technician Name</label>
-                    <input value={logForm.technician_name} onChange={e => lf('technician_name')(e.target.value)}
-                      placeholder="Who did the work"
-                      className={inputCls} />
+                    <select value={logForm.technician_name} onChange={e => lf('technician_name')(e.target.value)} className={inputCls}>
+                      <option value="">Select technician...</option>
+                      {technicians.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                      <option value="__other__">Other</option>
+                    </select>
+                    {logForm.technician_name === '__other__' && (
+                      <input onChange={e => lf('technician_name')(e.target.value)}
+                        placeholder="Enter name" className={inputCls + " mt-2"} />
+                    )}
                   </div>
                   <div>
                     <label className={labelCls}>Next Service Date</label>
