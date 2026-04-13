@@ -278,6 +278,7 @@ const InternalDashboard = () => {
             { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
             { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },
             { to: '/internal/maintenance-scheduling', gradient: 'from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800', icon: Calendar, title: 'Scheduling', sub: 'Maintenance schedules' },
+            { to: '/internal/documents', gradient: 'from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800', icon: FileText, title: 'Documents', sub: 'Contracts & certificates' },
             { to: '/internal/invoices', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: DollarSign, title: 'Invoices', sub: 'Billing & payments' },
             { to: '/internal/equipment', gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Building2, title: 'Equipment', sub: 'Elevator registry' },
             { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
