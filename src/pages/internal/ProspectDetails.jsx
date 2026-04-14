@@ -744,7 +744,27 @@ const ProspectDetails = () => {
                   <p className="text-gray-300 text-sm">{prospect.ai_recommendation}</p>
                 </div>
               </>
-            ) : <p className="text-gray-500 text-sm">AI analysis pending — will be scored in next nightly run.</p>}
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-purple-900/30 rounded-xl flex items-center justify-center mx-auto mb-3 border border-purple-700/30">
+                  <Brain className="w-6 h-6 text-purple-400" />
+                </div>
+                <p className="text-white font-medium mb-1">No AI Analysis Yet</p>
+                <p className="text-gray-500 text-sm mb-4">Run AI scoring to get a lead score and sales recommendation</p>
+                <button onClick={async () => {
+                  setProposalLoading(true);
+                  try {
+                    const h = { "Content-Type": "application/json", Authorization: "Bearer " + localStorage.getItem("smartlift_token") };
+                    const BASE = process.env.REACT_APP_API_BASE_URL || "https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod";
+                    await fetch(BASE + "/prospects/" + id + "/score", { method: "POST", headers: h, body: JSON.stringify({ prospect_id: id }) });
+                    setTimeout(() => window.location.reload(), 4000);
+                  } catch(e) { console.error(e); setProposalLoading(false); }
+                }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 mx-auto transition-colors">
+                  <Brain className="w-4 h-4" />{proposalLoading ? "Scoring..." : "Score This Prospect"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
