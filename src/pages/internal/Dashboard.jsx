@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle, Settings, Wrench, Calendar , FileText } from 'lucide-react';
@@ -18,6 +19,12 @@ const TX_TYPES = [
 
 const InternalDashboard = () => {
   const { user, logout } = useAuth();
+  const { savePreference } = useUserPreferences();
+
+  // Track last active timestamp for this user
+  useEffect(() => {
+    savePreference('last_dashboard_visit', new Date().toISOString());
+  }, []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [showAutoProspect, setShowAutoProspect] = useState(false);

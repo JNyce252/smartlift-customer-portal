@@ -66,8 +66,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const getToken = () => authService.getToken();
+
   const value = {
-    user, loading, error, login, register, logout,
+    user, loading, error, login, register, logout, getToken,
     isAuthenticated: !!user,
     isCompanyUser: user?.role === 'company',
     isCustomer: user?.role === 'customer',

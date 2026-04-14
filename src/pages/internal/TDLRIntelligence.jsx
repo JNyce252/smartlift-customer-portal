@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Building2, AlertTriangle, Clock, CheckCircle, Plus, Search, Filter, MapPin, Calendar, Zap, TrendingUp, ChevronRight, RefreshCw, Mail, X, Shield } from 'lucide-react';
@@ -173,7 +174,7 @@ const TDLRIntelligence = () => {
               filter: 'upcoming',
             },
           ].map(({ label, value, sub, color, bg, icon: Icon, filter }) => (
-            <button key={label} onClick={() => { setFilterUrgency(filterUrgency === filter ? 'all' : filter); setFilterDays('90'); }}
+            <button key={label} onClick={() => { const next = filterUrgency === filter ? 'all' : filter; setFilterUrgency(next); savePreference('tdlr_urgency_filter', next); setFilterDays('90'); savePreference('tdlr_days_filter', '90'); }}
               className={`rounded-xl p-5 border text-left transition-all hover:scale-105 ${bg} ${filterUrgency === filter ? 'ring-2 ring-purple-500' : ''}`}>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-gray-400 text-sm">{label}</p>
@@ -219,14 +220,14 @@ const TDLRIntelligence = () => {
                 placeholder="Search building name, address, owner..."
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-9 pr-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500" />
             </div>
-            <select value={filterDays} onChange={e => { setFilterDays(e.target.value); setFilterUrgency('all'); }}
+            <select value={filterDays} onChange={e => { const v = e.target.value; setFilterDays(v); setFilterUrgency('all'); savePreference('tdlr_days_filter', v); savePreference('tdlr_urgency_filter', 'all'); }}
               className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-300 text-sm focus:outline-none focus:border-purple-500">
               <option value="30">Expiring in 30 days</option>
               <option value="60">Expiring in 60 days</option>
               <option value="90">Expiring in 90 days</option>
               <option value="365">All + Expired (1yr)</option>
             </select>
-            <select value={filterCity} onChange={e => setFilterCity(e.target.value)}
+            <select value={filterCity} onChange={e => { setFilterCity(e.target.value); savePreference('tdlr_city_filter', e.target.value); }}
               className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-300 text-sm focus:outline-none focus:border-purple-500">
               <option value="">All Cities</option>
               {cities.map(c => (
@@ -235,7 +236,7 @@ const TDLRIntelligence = () => {
                 </option>
               ))}
             </select>
-            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            <select value={filterType} onChange={e => { setFilterType(e.target.value); savePreference('tdlr_type_filter', e.target.value); }}
               className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-300 text-sm focus:outline-none focus:border-purple-500">
               <option value="">All Types</option>
               <option value="PASSENGER">Passenger</option>
@@ -244,7 +245,7 @@ const TDLRIntelligence = () => {
               <option value="ACCESSIBILITY">Accessibility</option>
             </select>
             {(filterCity || filterType || filterUrgency !== 'all' || search) && (
-              <button onClick={() => { setFilterCity(''); setFilterType(''); setFilterUrgency('all'); setSearch(''); }}
+              <button onClick={() => { setFilterCity(''); setFilterType(''); setFilterUrgency('all'); setSearch(''); savePreferences({ tdlr_city_filter: '', tdlr_type_filter: '', tdlr_urgency_filter: 'all', tdlr_days_filter: '30' }); }}
                 className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm flex items-center gap-1.5 transition-colors">
                 <X className="w-3.5 h-3.5" />Clear
               </button>

@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
@@ -22,6 +23,14 @@ const BUILDING_TYPES = [
 
 const LeadSearch = () => {
   const { user, logout } = useAuth();
+  const { get, savePreference, loading: prefsLoading } = useUserPreferences();
+
+  // Restore this user's last search state
+  useEffect(() => {
+    if (prefsLoading) return;
+    const savedSearch = get('lead_search_query', '');
+    if (savedSearch) setSearch(savedSearch);
+  }, [prefsLoading]);
   const [mode, setMode] = useState('saved');
   const [lastRefresh, setLastRefresh] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
