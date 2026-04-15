@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
       if (currentUser) {
         // Re-fetch role on every page refresh — token may have new groups
         const profile = await fetch(
-          import.meta.env.VITE_API_BASE_URL + '/me',
+          process.env.REACT_APP_API_BASE_URL + '/me',
           { headers: { Authorization: 'Bearer ' + currentUser.token } }
         ).then(r => r.ok ? r.json() : null).catch(() => null);
         setUser({
@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }) => {
   const fetchUserProfile = async (token) => {
     try {
       const res = await fetch(
-        import.meta.env.VITE_API_BASE_URL + '/me',
+        process.env.REACT_APP_API_BASE_URL + '/me',
         { headers: { Authorization: 'Bearer ' + token } }
       );
       if (res.ok) {

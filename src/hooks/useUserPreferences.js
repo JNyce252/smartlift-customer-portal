@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const API = import.meta.env.VITE_API_BASE_URL;
+const API = process.env.REACT_APP_API_BASE_URL;
 
 // Cache in memory so we don't re-fetch on every page navigation
 let memoryCache = null;
