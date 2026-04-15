@@ -16,6 +16,7 @@ const urgencyConfig = {
 
 const TDLRIntelligence = () => {
   const navigate = useNavigate();
+  const { get, savePreference, savePreferences, loading: prefsLoading } = useUserPreferences();
   const [records, setRecords] = useState([]);
   const [counts, setCounts] = useState({});
   const [cities, setCities] = useState([]);
@@ -30,6 +31,19 @@ const TDLRIntelligence = () => {
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [showEmailModal, setShowEmailModal] = useState(null);
+
+  // Restore this user's last filter settings when preferences load
+  React.useEffect(() => {
+    if (prefsLoading) return;
+    const savedCity = get('tdlr_city_filter', '');
+    const savedDays = get('tdlr_days_filter', '30');
+    const savedUrgency = get('tdlr_urgency_filter', 'all');
+    const savedType = get('tdlr_type_filter', '');
+    if (savedCity) setFilterCity(savedCity);
+    if (savedDays) setFilterDays(savedDays);
+    if (savedUrgency) setFilterUrgency(savedUrgency);
+    if (savedType) setFilterType(savedType);
+  }, [prefsLoading]);
   const LIMIT = 25;
 
   const headers = {
