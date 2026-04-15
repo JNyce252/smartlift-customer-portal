@@ -1,6 +1,5 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef } from 'react';
-import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
 import { Search, Building2, MapPin, AlertCircle, Plus, CheckCircle, Star, Phone, Eye, Filter , Download } from 'lucide-react';
 import { exportProspectsCSV } from '../../utils/csvExport';
@@ -264,20 +263,6 @@ const LeadSearch = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link to="/internal/dashboard"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div>
-                <h1 className="text-xl font-bold text-white">Lead Search</h1>
-                <p className="text-xs text-gray-400">{user?.email}</p>
-              </div>
-            </div>
-            <UserMenu />
-          </div>
-        </div>
-      </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8 flex items-center justify-between flex-wrap gap-4">

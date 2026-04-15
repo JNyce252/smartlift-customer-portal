@@ -3,8 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle, Settings, Wrench, Calendar , FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import UserMenu from '../../components/common/UserMenu';
-import NotificationBell from '../../components/common/NotificationBell';
 import { api } from '../../services/api';
 
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY || 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
@@ -25,7 +23,6 @@ const InternalDashboard = () => {
   useEffect(() => {
     savePreference('last_dashboard_visit', new Date().toISOString());
   }, []);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [showAutoProspect, setShowAutoProspect] = useState(false);
   const [customCities, setCustomCities] = useState(['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX']);
@@ -208,35 +205,8 @@ const InternalDashboard = () => {
     setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
   };
 
-
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden text-gray-400 hover:text-white">
-                {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-              </button>
-              <div className="flex items-center gap-3">
-                <div className="bg-purple-600 rounded-lg p-2"><Building2 className="w-6 h-6 text-white" /></div>
-                <div>
-                  <h1 className="text-xl font-bold text-white">{profile.company_name || 'Smarterlift'}</h1>
-                  <p className="text-xs text-gray-400">AI Powered Lead Intelligence</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-white">{user?.name || 'Staff'}</p>
-                <p className="text-xs text-gray-400">{user?.email}</p>
-              </div>
-              <UserMenu companyName={profile.company_name} />
-            </div>
-          </div>
-        </div>
-      </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">

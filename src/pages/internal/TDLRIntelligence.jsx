@@ -2,8 +2,6 @@ import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Building2, AlertTriangle, Clock, CheckCircle, Plus, Search, Filter, MapPin, Calendar, Zap, TrendingUp, ChevronRight, RefreshCw, Mail, X, Shield } from 'lucide-react';
-import UserMenu from '../../components/common/UserMenu';
-import NotificationBell from '../../components/common/NotificationBell';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -120,31 +118,6 @@ const TDLRIntelligence = () => {
 
   return (
     <div className="min-h-screen bg-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link to="/internal/dashboard"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div>
-                <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                  TDLR Intelligence
-                  <span className="px-2 py-0.5 bg-purple-900/30 border border-purple-700/30 text-purple-400 text-xs rounded-full font-medium">
-                    {counts.total ? parseInt(counts.total).toLocaleString() : '37,949'} records
-                  </span>
-                </h1>
-                <p className="text-xs text-gray-400">Texas elevator compliance — live sales intelligence</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={() => fetchRecords(true)} className="p-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors">
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <NotificationBell />
-              <UserMenu />
-            </div>
-          </div>
-        </div>
-      </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 

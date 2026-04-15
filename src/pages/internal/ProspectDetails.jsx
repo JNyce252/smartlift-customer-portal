@@ -1,6 +1,5 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect } from 'react';
-import UserMenu from '../../components/common/UserMenu';
 import { Link, useParams } from 'react-router-dom';
 import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -669,17 +668,6 @@ const ProspectDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link to="/internal/leads"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div><h1 className="text-xl font-bold text-white">Prospect Intelligence</h1><p className="text-xs text-gray-400">{user?.email}</p></div>
-            </div>
-            <UserMenu />
-          </div>
-        </div>
-      </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link to="/internal/leads" className="text-purple-400 hover:text-purple-300 text-sm mb-6 inline-flex items-center gap-1">← Back to Lead Search</Link>

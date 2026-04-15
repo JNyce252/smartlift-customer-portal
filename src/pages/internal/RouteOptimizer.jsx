@@ -1,6 +1,5 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
 import { Building2, MapPin, Navigation, Plus, X, Clock, Map, ChevronUp, ChevronDown, Star, Zap, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -210,20 +209,6 @@ const RouteOptimizer = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-full px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link to="/internal/dashboard"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div>
-                <h1 className="text-xl font-bold text-white">Route Planner</h1>
-                <p className="text-xs text-gray-400">{prospects.length} prospects with location</p>
-              </div>
-            </div>
-            <UserMenu />
-          </div>
-        </div>
-      </header>
 
       <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
         {/* Left Panel */}

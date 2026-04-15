@@ -1,6 +1,5 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef } from 'react';
-import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
 import { Building2, Star, Brain, Eye, GripVertical } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -49,7 +48,6 @@ const Pipeline = () => {
     const interval = setInterval(() => setRefreshTick(t => t + 1), 60000);
     return () => clearInterval(interval);
   }, []);
-
 
   const clearColumn = async (columnId) => {
     if (!window.confirm(`Move all prospects from this column to Lost?`)) return;
@@ -161,27 +159,6 @@ const Pipeline = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-full px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <Link to="/internal/dashboard"><Building2 className="w-8 h-8 text-purple-400" /></Link>
-              <div>
-                <h1 className="text-xl font-bold text-white">Pipeline</h1>
-                <p className="text-xs text-gray-400">{user?.email}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 bg-gray-700/50 rounded-lg px-4 py-2 border border-gray-600">
-                <Brain className="w-4 h-4 text-purple-400" />
-                <span className="text-gray-400 text-sm">Active Pipeline:</span>
-                <span className="text-white font-bold">${(totalPipelineValue/1000).toFixed(0)}K</span>
-              </div>
-              <UserMenu />
-            </div>
-          </div>
-        </div>
-      </header>
 
       <div className="p-6">
         <div className="mb-6 flex items-center justify-between">
