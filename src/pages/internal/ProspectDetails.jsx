@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link, useParams } from 'react-router-dom';
@@ -11,6 +12,7 @@ const GOOGLE_CSE_ID = '21ba7a2cd02dc4459';
 
 const ProspectDetails = () => {
   const { id } = useParams();
+  const { savePreference } = useUserPreferences();
   const { user, logout } = useAuth();
   const [prospect, setProspect] = useState(null);
   const [tdlr, setTdlr] = useState(null);
@@ -61,6 +63,11 @@ const ProspectDetails = () => {
   const [scheduleForm, setScheduleForm] = useState({ date: '', time: '09:00', technician: '', notes: '' });
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleSuccess, setScheduleSuccess] = useState(false);
+
+  // Track last viewed prospect for this user
+  React.useEffect(() => {
+    if (id) savePreference('last_prospect_id', parseInt(id));
+  }, [id]);
 
   useEffect(() => {
     const token = localStorage.getItem('smartlift_token');

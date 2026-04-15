@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
@@ -10,6 +11,7 @@ const DEFAULT_START = { lat: 32.7767, lng: -96.7970, name: 'Dallas, TX' };
 
 const RouteOptimizer = () => {
   const { user } = useAuth();
+  const { get, savePreference, loading: prefsLoading } = useUserPreferences();
   const mapRef = useRef(null);
   const googleMapRef = useRef(null);
   const directionsRendererRef = useRef(null);
@@ -234,7 +236,7 @@ const RouteOptimizer = () => {
               ref={startInputRef}
               type="text"
               defaultValue={startAddress}
-              onChange={e => setStartAddress(e.target.value)}
+              onChange={e => { setStartAddress(e.target.value); savePreference('route_start_address', e.target.value); }}
               placeholder="Enter your starting address..."
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
             />

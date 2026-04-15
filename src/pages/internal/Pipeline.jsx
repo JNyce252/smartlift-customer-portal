@@ -1,3 +1,4 @@
+import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useRef } from 'react';
 import UserMenu from '../../components/common/UserMenu';
 import { Link } from 'react-router-dom';
@@ -17,6 +18,7 @@ const COLUMNS = [
 
 const Pipeline = () => {
   const { user, logout } = useAuth();
+  const { get, savePreference, loading: prefsLoading } = useUserPreferences();
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState(null);
@@ -27,6 +29,13 @@ const Pipeline = () => {
   const [savingContract, setSavingContract] = useState(false);
   const [dragOver, setDragOver] = useState(null);
   const [columnFilters, setColumnFilters] = useState({});
+
+  // Restore this user's pipeline column filters
+  React.useEffect(() => {
+    if (prefsLoading) return;
+    const saved = get('pipeline_column_filters', null);
+    if (saved) setColumnFilters(saved);
+  }, [prefsLoading]);
   const [showFilterMenu, setShowFilterMenu] = useState(null);
 
   useEffect(() => {
@@ -229,7 +238,7 @@ const Pipeline = () => {
                       type="text"
                       placeholder="Filter..."
                       value={columnFilters[col.id] || ''}
-                      onChange={e => setColumnFilters(prev => ({ ...prev, [col.id]: e.target.value }))}
+                      onChange={e => { const v = e.target.value; setColumnFilters(prev => { const next = { ...prev, [col.id]: v }; savePreference('pipeline_column_filters', next); return next; }); }}
                       className="w-full px-2 py-1 bg-gray-900/50 border border-gray-700 rounded text-gray-300 text-xs placeholder-gray-600 focus:outline-none focus:border-gray-500"
                     />
                   </div>
