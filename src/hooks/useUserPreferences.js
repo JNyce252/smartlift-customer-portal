@@ -7,7 +7,7 @@ const API = process.env.REACT_APP_API_BASE_URL;
 let memoryCache = null;
 
 export const useUserPreferences = () => {
-  const { user, getToken } = useAuth();
+  const { user, getToken, getIdToken } = useAuth();
   const [preferences, setPreferences] = useState(memoryCache?.preferences || {});
   const [userRecord, setUserRecord] = useState(memoryCache || null);
   const [loading, setLoading] = useState(!memoryCache);
@@ -23,7 +23,7 @@ export const useUserPreferences = () => {
     }
     const load = async () => {
       try {
-        const token = getToken();
+        const token = getIdToken ? getIdToken() : getToken();
         const res = await fetch(`${API}/me/preferences`, {
           headers: { Authorization: `Bearer ${token}` }
         });

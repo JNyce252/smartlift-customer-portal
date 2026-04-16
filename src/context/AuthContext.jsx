@@ -107,9 +107,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   const getToken = () => authService.getToken();
+  // getIdToken returns the ID token which contains cognito:groups for role detection
+  const getIdToken = () => {
+    try {
+      const userStr = localStorage.getItem('smartlift_user');
+      return JSON.parse(userStr)?.idToken || authService.getToken();
+    } catch { return authService.getToken(); }
+  };
 
   const value = {
-    user, loading, error, login, register, logout, getToken,
+    user, loading, error, login, register, logout, getToken, getIdToken,
     isAuthenticated: !!user,
     isCompanyUser: ['owner','technician','sales','staff'].includes(user?.role),
     isCustomer: user?.role === 'customer',
