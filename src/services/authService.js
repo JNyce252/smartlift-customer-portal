@@ -19,7 +19,12 @@ class AuthService {
         onSuccess: (result) => {
           const payload = result.getIdToken().payload;
           const groups = payload['cognito:groups'] || [];
-          let role = groups.includes('CompanyUsers') ? 'company' : 'customer';
+          let role = 'staff';
+          if (groups.includes('Customers')) role = 'customer';
+          else if (groups.includes('Owners')) role = 'owner';
+          else if (groups.includes('Technicians')) role = 'technician';
+          else if (groups.includes('SalesOffice')) role = 'sales';
+          else if (groups.includes('CompanyUsers')) role = 'staff';
           const user = {
             id: payload.sub,
             email: payload.email,
@@ -92,7 +97,12 @@ class AuthService {
           if (err) { resolve(null); return; }
           const payload = session.getIdToken().payload;
           const groups = payload['cognito:groups'] || [];
-          let role = groups.includes('CompanyUsers') ? 'company' : 'customer';
+          let role = 'staff';
+          if (groups.includes('Customers')) role = 'customer';
+          else if (groups.includes('Owners')) role = 'owner';
+          else if (groups.includes('Technicians')) role = 'technician';
+          else if (groups.includes('SalesOffice')) role = 'sales';
+          else if (groups.includes('CompanyUsers')) role = 'staff';
           const user = {
             id: payload.sub,
             email: payload.email,
