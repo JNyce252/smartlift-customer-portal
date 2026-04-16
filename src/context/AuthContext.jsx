@@ -64,7 +64,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const userData = await authService.login(email, password);
       // Fetch role and preferences from /me
-      const profile = await fetchUserProfile(userData.token);
+      const profile = await fetchUserProfile(userData.token, userData.idToken);
       const enriched = {
         ...userData,
         role: profile?.role || userData.role || 'staff',
