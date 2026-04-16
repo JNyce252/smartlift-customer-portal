@@ -9,6 +9,22 @@ export const useAuth = () => {
   return context;
 };
 
+
+// Decode role directly from Cognito idToken — no API call needed
+const getRoleFromToken = (idToken) => {
+  try {
+    const payload = JSON.parse(atob(idToken.split('.')[1]));
+    const groups = payload['cognito:groups'] || [];
+    const g = Array.isArray(groups) ? groups : String(groups).split(',').map(s => s.trim());
+    if (g.includes('Owners')) return 'owner';
+    if (g.includes('Technicians')) return 'technician';
+    if (g.includes('SalesOffice')) return 'sales';
+    if (g.includes('CompanyUsers')) return 'staff';
+    if (g.includes('Customers')) return 'customer';
+    return 'staff';
+  } catch { return 'staff'; }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,9 +41,11 @@ export const AuthProvider = ({ children }) => {
           process.env.REACT_APP_API_BASE_URL + '/me',
           { headers: { Authorization: 'Bearer ' + currentUser.token } }
         ).then(r => r.ok ? r.json() : null).catch(() => null);
+        // Decode role directly from stored idToken
+        const roleFromToken = getRoleFromToken(currentUser.idToken || currentUser.token);
         setUser({
           ...currentUser,
-          role: profile?.role || currentUser.role || 'staff',
+          role: roleFromToken,
           displayName: profile?.display_name || currentUser.name || currentUser.email,
           preferences: profile?.preferences || {},
           dbProfile: profile || null,
@@ -64,10 +82,13 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const userData = await authService.login(email, password);
       // Fetch role and preferences from /me
+      // Decode role directly from idToken — fast and reliable
+      const roleFromToken = getRoleFromToken(userData.idToken || userData.token);
+      // Also fetch preferences from /me in background
       const profile = await fetchUserProfile(userData.token, userData.idToken);
       const enriched = {
         ...userData,
-        role: profile?.role || userData.role || 'staff',
+        role: roleFromToken,
         displayName: profile?.display_name || userData.name || email,
         preferences: profile?.preferences || {},
         dbProfile: profile || null,
