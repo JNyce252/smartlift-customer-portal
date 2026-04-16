@@ -13,6 +13,7 @@ export const useAuth = () => {
 // Decode role directly from Cognito idToken — no API call needed
 const getRoleFromToken = (idToken) => {
   try {
+    if (!idToken || typeof idToken !== 'string' || !idToken.includes('.')) return 'staff';
     const payload = JSON.parse(atob(idToken.split('.')[1]));
     const groups = payload['cognito:groups'] || [];
     const g = Array.isArray(groups) ? groups : String(groups).split(',').map(s => s.trim());
