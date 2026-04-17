@@ -44,7 +44,8 @@ const Dashboard = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const token = localStorage.getItem('smartlift_token');
+  const authData = localStorage.getItem('smartlift_auth');
+  const token = authData ? JSON.parse(authData)?.token : localStorage.getItem('smartlift_token');
   const headers = { Authorization: `Bearer ${token}` };
 
   useEffect(() => {
