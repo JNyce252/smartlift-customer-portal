@@ -1,509 +1,393 @@
-import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Search, TrendingUp, MapPin, Users, Building2, DollarSign, LogOut, Menu, X, Clock, Brain, AlertTriangle, Star, CheckCircle, Settings, Wrench, Calendar , FileText } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { api } from '../../services/api';
+import { useUserPreferences } from '../../hooks/useUserPreferences';
+import {
+  DollarSign, TrendingUp, AlertTriangle, ClipboardList,
+  ArrowRight, Shield, Users, Zap, ChevronUp, ChevronDown,
+  Clock, CheckCircle, AlertCircle, BarChart2, MapPin, Star
+} from 'lucide-react';
 
-const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY || 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
-const TX_CITIES = ['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX'];
-const TX_TYPES = [
-  { label: 'Hotels', query: 'hotel' },
-  { label: 'Office Buildings', query: 'office building' },
-  { label: 'Hospitals', query: 'hospital medical center' },
-  { label: 'Apartments', query: 'apartment complex' },
-];
 
-const InternalDashboard = () => {
-  const { user, logout } = useAuth();
+const fmt$ = (n) => {
+  if (!n) return '$0';
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return '$' + (n/1000).toFixed(0) + 'K';
+  return '$' + parseInt(n).toLocaleString();
+};
+
+const PRIORITY_COLOR = {
+  emergency: { bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)', text: '#f87171' },
+  high:      { bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)', text: '#fbbf24' },
+  medium:    { bg: 'rgba(124,58,237,0.1)', border: 'rgba(124,58,237,0.3)', text: '#a78bfa' },
+  low:       { bg: 'rgba(107,114,128,0.1)', border: 'rgba(107,114,128,0.3)', text: '#9ca3af' },
+};
+
+const STATUS_COLOR = {
+  open:        { text: '#60a5fa' },
+  in_progress: { text: '#fbbf24' },
+  scheduled:   { text: '#a78bfa' },
+  completed:   { text: '#6ee7b7' },
+};
+
+const Dashboard = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { savePreference } = useUserPreferences();
 
-  // Track last active timestamp for this user
-  useEffect(() => {
-    savePreference('last_dashboard_visit', new Date().toISOString());
-  }, []);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [showAutoProspect, setShowAutoProspect] = useState(false);
-  const [customCities, setCustomCities] = useState(['Dallas, TX', 'Houston, TX', 'Austin, TX', 'San Antonio, TX', 'Fort Worth, TX']);
-  const [newCity, setNewCity] = useState('');
-  const [citySuggestions, setCitySuggestions] = useState([]);
-  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
-  const [autoRunning, setAutoRunning] = useState(false);
-  const [autoProgress, setAutoProgress] = useState({ step: '', current: 0, total: 0, imported: 0, skipped: 0 });
-  const [autoDone, setAutoDone] = useState(false);
+  const [profile, setProfile] = useState({});
+  const [tdlr, setTdlr] = useState({});
+  const [contracts, setContracts] = useState({});
   const [prospects, setProspects] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [tickets, setTickets] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState({});
-  const [tdlrStats, setTdlrStats] = useState({});
+
+  const token = localStorage.getItem('smartlift_token');
+  const headers = { Authorization: `Bearer ${token}` };
 
   useEffect(() => {
-    Promise.all([
-      api.getProspects(),
-      api.getCustomers(),
-      api.getTickets(),
-      api.getInvoices(),
-      fetch(`${BASE_URL}/profile`, { headers: { Authorization: `Bearer ${localStorage.getItem('smartlift_token')}` } }).then(r => r.json()),
-      fetch(`${BASE_URL}/analytics/tdlr`, { headers: { Authorization: `Bearer ${localStorage.getItem('smartlift_token')}` } }).then(r => r.json()),
-    ])
-      .then(([p, c, t, i, prof, tdlr]) => {
-        setProspects(p); setCustomers(c); setTickets(t); setInvoices(i);
-        setProfile(prof || {});
-        setTdlrStats(tdlr || {});
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [refreshTick]);
+    savePreference('last_dashboard_visit', new Date().toISOString());
+    const load = async () => {
+      try {
+        const [prof, tdlrData, contractData, prospectsData, woData, invData] = await Promise.all([
+          fetch(`${BASE_URL}/profile`, { headers }).then(r => r.json()).catch(() => ({})),
+          fetch(`${BASE_URL}/analytics/tdlr`, { headers }).then(r => r.json()).catch(() => ({})),
+          fetch(`${BASE_URL}/analytics/contracts`, { headers }).then(r => r.json()).catch(() => ({})),
+          fetch(`${BASE_URL}/prospects`, { headers }).then(r => r.json()).catch(() => []),
+          fetch(`${BASE_URL}/work-orders`, { headers }).then(r => r.json()).catch(() => []),
+          fetch(`${BASE_URL}/invoices`, { headers }).then(r => r.json()).catch(() => []),
+        ]);
+        setProfile(prof);
+        setTdlr(tdlrData);
+        setContracts(contractData);
+        setProspects(Array.isArray(prospectsData) ? prospectsData : []);
+        setWorkOrders(Array.isArray(woData) ? woData : []);
+        setInvoices(Array.isArray(invData) ? invData : []);
+      } catch(e) { console.error(e); }
+      finally { setLoading(false); }
+    };
+    load();
+  }, []);
 
-  const highScoreProspects = prospects.filter(p => p.lead_score >= 70);
-  const highUrgencyProspects = prospects.filter(p => p.service_urgency === 'high');
-  const openTickets = tickets.filter(t => t.status === 'open' || t.status === 'in_progress');
-  const pipelineValue = prospects.reduce((sum, p) => sum + ((p.estimated_elevators || 3) * 8000), 0);
-  const topProspects = [...prospects].sort((a, b) => (b.lead_score || 0) - (a.lead_score || 0)).slice(0, 5);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-  const urgencyColors = {
-    high: 'bg-red-500/20 text-red-400 border-red-500/30',
-    medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    low: 'bg-green-500/20 text-green-400 border-green-500/30',
+  // Computed metrics
+  const mrr = parseFloat(contracts.total_monthly_revenue) || 0;
+  const arr = mrr * 12;
+  const activeContracts = parseInt(contracts.active_contracts) || 0;
+  const elevatorsContracted = parseInt(contracts.total_elevators_contracted) || 0;
+  const expiredCerts = parseInt(tdlr.expired_certs) || 0;
+  const expiringSoon = parseInt(tdlr.expiring_soon) || 0;
+
+  const openWO = workOrders.filter(w => w.status === 'open');
+  const inProgressWO = workOrders.filter(w => w.status === 'in_progress');
+  const emergencyWO = workOrders.filter(w => w.priority === 'emergency' && w.status !== 'completed');
+  const activeWO = workOrders.filter(w => ['open','in_progress','scheduled'].includes(w.status));
+
+  const topProspects = [...prospects]
+    .sort((a,b) => (b.lead_score||0) - (a.lead_score||0))
+    .slice(0, 6);
+
+  const pipelineValue = prospects
+    .filter(p => !['won','lost','archived'].includes(p.status))
+    .reduce((sum,p) => sum + ((p.estimated_elevators||3) * 8000), 0);
+
+  const recentInvoices = [...invoices]
+    .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 4);
+
+  const s = {
+    page: { minHeight: '100vh', background: '#0a0a0f', color: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", padding: '32px 36px' },
+    card: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '24px' },
+    cardHover: { cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s' },
+    label: { fontSize: '12px', fontWeight: '500', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' },
+    bigNum: { fontSize: '32px', fontWeight: '800', letterSpacing: '-1px', color: '#fff' },
+    sub: { fontSize: '12px', color: 'rgba(255,255,255,0.35)', marginTop: '4px' },
   };
 
-  const fetchCitySuggestions = (input) => {
-    if (input.length < 2) { setCitySuggestions([]); return; }
-    if (!window.google) return;
-    const service = new window.google.maps.places.AutocompleteService();
-    service.getPlacePredictions(
-      { input, types: ['(cities)'], componentRestrictions: { country: 'us' } },
-      (predictions, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-          setCitySuggestions(predictions);
-          setShowCitySuggestions(true);
-        }
-      }
-    );
-  };
-
-  const addCity = (cityName) => {
-    const clean = cityName.replace(', USA', '');
-    if (!customCities.includes(clean)) {
-      setCustomCities(prev => [...prev, clean]);
-    }
-    setNewCity('');
-    setCitySuggestions([]);
-    setShowCitySuggestions(false);
-  };
-
-  const removeCity = (city) => setCustomCities(prev => prev.filter(c => c !== city));
-
-  const runAutoProspect = async () => {
-    setAutoRunning(true);
-    setAutoDone(false);
-    const token = localStorage.getItem('smartlift_token');
-    const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
-    let totalImported = 0;
-    let totalSkipped = 0;
-    const total = TX_CITIES.length * TX_TYPES.length;
-    let current = 0;
-
-    for (const city of customCities) {
-      for (const type of TX_TYPES) {
-        current++;
-        setAutoProgress({ step: `Searching ${type.label} in ${city.split(',')[0]}...`, current, total, imported: totalImported, skipped: totalSkipped });
-
-        try {
-          // Geocode city
-          if (!window.google) continue;
-          const geocoder = new window.google.maps.Geocoder();
-          const geoResult = await new Promise(resolve => {
-            geocoder.geocode({ address: city }, (results, status) => {
-              resolve(status === 'OK' ? results[0] : null);
-            });
-          });
-          if (!geoResult) continue;
-
-          const lat = geoResult.geometry.location.lat();
-          const lng = geoResult.geometry.location.lng();
-
-          // Search places
-          const places = await new Promise(resolve => {
-            const mapDiv = document.createElement('div');
-            const map = new window.google.maps.Map(mapDiv);
-            const service = new window.google.maps.places.PlacesService(map);
-            service.nearbySearch({ location: { lat, lng }, radius: 48280, keyword: type.query }, (results, status) => {
-              resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? results || [] : []);
-            });
-          });
-
-          if (!places.length) continue;
-
-          // Format for AI scoring
-          const formatted = places.slice(0, 20).map(p => ({
-            google_place_id: p.place_id,
-            name: p.name,
-            address: p.formatted_address || p.vicinity,
-            city: city.split(',')[0],
-            state: 'TX',
-            rating: p.rating,
-            total_reviews: p.user_ratings_total,
-            type: type.query,
-            lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
-            lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
-          }));
-
-          setAutoProgress(prev => ({ ...prev, step: `AI scoring ${type.label} in ${city.split(',')[0]}...` }));
-
-          // AI score
-          const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ results: formatted, buildingType: type.label, city: city.split(',')[0], state: 'TX' })
-          });
-          const aiData = await aiRes.json();
-          const scored = aiData.results || [];
-          const highScorers = scored.filter(r => r.ai_score >= 70);
-
-          // Import high scorers with website and phone fetch
-          for (const place of highScorers) {
-            try {
-              let enriched = { ...place, lead_score: place.ai_score };
-              try {
-                const details = await new Promise(resolve => {
-                  const mapDiv = document.createElement('div');
-                  const map = new window.google.maps.Map(mapDiv);
-                  const service = new window.google.maps.places.PlacesService(map);
-                  service.getDetails({
-                    placeId: place.google_place_id,
-                    fields: ['website', 'formatted_phone_number']
-                  }, (result, status) => {
-                    resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? result : {});
-                  });
-                });
-                if (details.website) enriched.website = details.website;
-                if (details.formatted_phone_number) enriched.phone = details.formatted_phone_number;
-              } catch {}
-              const res = await fetch(`${BASE_URL}/prospects`, {
-                method: 'POST', headers,
-                body: JSON.stringify(enriched)
-              });
-              if (res.ok) totalImported++;
-              else totalSkipped++;
-            } catch { totalSkipped++; }
-          }
-
-          setAutoProgress(prev => ({ ...prev, imported: totalImported, skipped: totalSkipped }));
-
-          // Small delay to avoid rate limiting
-          await new Promise(r => setTimeout(r, 500));
-
-        } catch (e) { console.error(e); }
-      }
-    }
-
-    setAutoRunning(false);
-    setAutoDone(true);
-    setAutoProgress(prev => ({ ...prev, step: 'Complete!', imported: totalImported }));
-  };
+  if (loading) return (
+    <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(124,58,237,0.3)', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}>Loading dashboard...</p>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div style={s.page}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');`}</style>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold text-white mb-1">
-                {parseInt(new Date().toLocaleTimeString('en-US', {hour: '2-digit', hour12: false, timeZone: 'America/Chicago'})) < 12 ? 'Good morning' : parseInt(new Date().toLocaleTimeString('en-US', {hour: '2-digit', hour12: false, timeZone: 'America/Chicago'})) < 17 ? 'Good afternoon' : 'Good evening'}{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! 👋
-              </h2>
-              <p className="text-gray-400">
-                {prospects.length === 0 
-                  ? "Let's find your first leads — click Find New Leads to get started." 
-                  : `You have ${prospects.filter(p => p.lead_score >= 80).length} high-priority prospects and ${tdlrStats.expiring_soon || 0} TDLR certifications expiring soon.`}
-              </p>
-            </div>
-            <div className="hidden lg:block text-right">
-              <p className="text-gray-500 text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              {profile.company_name && <p className="text-purple-400 text-sm font-medium mt-1">{profile.company_name}</p>}
-            </div>
-          </div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '32px' }}>
+        <div>
+          <h1 style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px', marginBottom: '4px' }}>
+            {greeting}, {firstName}! 👋
+          </h1>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)' }}>
+            {emergencyWO.length > 0
+              ? `⚠️ ${emergencyWO.length} emergency work order${emergencyWO.length > 1 ? 's' : ''} need attention`
+              : `${activeWO.length} active work orders · ${expiredCerts.toLocaleString()} expired TDLR certs in Texas`}
+          </p>
         </div>
-
-        {/* Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {[
-            { icon: Search, iconBg: 'bg-blue-600/20', iconColor: 'text-blue-400', label: 'Total Prospects', value: prospects.length, sub: `${highScoreProspects.length} high score (80+)` },
-            { icon: Brain, iconBg: 'bg-purple-600/20', iconColor: 'text-purple-400', label: 'High Urgency', value: highUrgencyProspects.length, sub: `${prospects.filter(p => p.service_urgency === 'medium').length} medium urgency` },
-            { icon: AlertTriangle, iconBg: 'bg-amber-600/20', iconColor: 'text-amber-400', label: 'TDLR Expiring Soon', value: loading ? '...' : (tdlrStats.expiring_soon || 0), sub: `${tdlrStats.expired_certs || 0} already expired` },
-            { icon: Users, iconBg: 'bg-green-600/20', iconColor: 'text-green-400', label: 'Customers', value: customers.length, sub: `${tdlrStats.total_records ? tdlrStats.total_records.toLocaleString() : '0'} TX elevators tracked` },
-          ].map(({ icon: Icon, iconBg, iconColor, label, value, sub }) => (
-            <div key={label} className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`${iconBg} rounded-lg p-3`}><Icon className={`w-6 h-6 ${iconColor}`} /></div>
-              </div>
-              <p className="text-gray-400 text-sm mb-1">{label}</p>
-              <p className="text-3xl font-bold text-white">{loading ? '...' : value}</p>
-              <p className="text-xs text-gray-500 mt-1">{sub}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {[
-            { to: null, gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Search, title: 'Find New Leads', sub: 'Auto-prospect Texas' },
-            { to: '/internal/work-orders', gradient: 'from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800', icon: Wrench, title: 'Work Orders', sub: 'Manage service jobs' },
-            { to: '/internal/customers', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: Users, title: 'Customers', sub: 'Manage accounts' },
-            { to: "/internal/routes", gradient: "from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800", icon: MapPin, title: "Plan Routes", sub: "Optimize schedule" },
-            { to: "/internal/pipeline", gradient: "from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800", icon: TrendingUp, title: "Pipeline", sub: "Track deal stages" },
-            { to: '/internal/maintenance-scheduling', gradient: 'from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800', icon: Calendar, title: 'Scheduling', sub: 'Maintenance schedules' },
-            { to: '/internal/documents', gradient: 'from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800', icon: FileText, title: 'Documents', sub: 'Contracts & certificates' },
-            { to: '/internal/invoices', gradient: 'from-green-600 to-green-700 hover:from-green-700 hover:to-green-800', icon: DollarSign, title: 'Invoices', sub: 'Billing & payments' },
-            { to: '/internal/equipment', gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800', icon: Building2, title: 'Equipment', sub: 'Elevator registry' },
-            { to: '/internal/tdlr', gradient: 'from-red-600 to-red-700 hover:from-red-700 hover:to-red-800', icon: AlertTriangle, title: 'TDLR Intelligence', sub: 'Expiring certificates' },
-            { to: '/internal/analytics', gradient: 'from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800', icon: TrendingUp, title: 'Analytics', sub: 'View metrics' },
-            { to: '/internal/profile', gradient: 'from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800', icon: Users, title: 'Profile', sub: 'Company settings' },
-          ].map(({ to, gradient, icon: Icon, title, sub }) => (
-            to ? (
-              <Link key={title} to={to} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all cursor-pointer`}>
-                <Icon className="w-7 h-7 text-white mb-3" />
-                <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
-                <p className="text-white/70 text-sm">{sub}</p>
-              </Link>
-            ) : (
-              <button key={title} onClick={() => { setShowAutoProspect(true); setAutoDone(false); setAutoProgress({ step: '', current: 0, total: 0, imported: 0, skipped: 0 }); }} className={`bg-gradient-to-br ${gradient} rounded-xl p-5 transition-all text-left w-full`}>
-                <Icon className="w-7 h-7 text-white mb-3" />
-                <h3 className="text-lg font-bold text-white mb-1">{title}</h3>
-                <p className="text-white/70 text-sm">{sub}</p>
-              </button>
-            )
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Top Prospects */}
-          <div className="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-xl font-bold text-white">Top Prospects</h3>
-              <Link to="/internal/leads" className="text-purple-400 hover:text-purple-300 text-sm">View All →</Link>
-            </div>
-            <div className="space-y-3">
-              {topProspects.map((prospect) => (
-                <Link key={prospect.id} to={`/internal/prospect/${prospect.id}`}
-                  className="flex items-center gap-4 bg-gray-700/50 rounded-lg p-4 border border-gray-600 hover:border-purple-500 transition-colors">
-                  <div className="bg-purple-600/20 rounded-lg p-2.5 border border-purple-600/30 flex-shrink-0">
-                    <Building2 className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-white font-medium truncate">{prospect.name}</h4>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-gray-400 text-xs">{prospect.city}, {prospect.state}</span>
-                      {prospect.rating && <><Star className="w-3 h-3 text-yellow-400 fill-yellow-400" /><span className="text-gray-400 text-xs">{prospect.rating}</span></>}
-                      {prospect.service_urgency && (
-                        <span className={`px-1.5 py-0.5 rounded text-xs border ${urgencyColors[prospect.service_urgency]}`}>{prospect.service_urgency}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0 text-right">
-                    <span className={`font-bold text-xl ${prospect.lead_score >= 90 ? 'text-green-400' : prospect.lead_score >= 70 ? 'text-amber-400' : 'text-gray-400'}`}>{prospect.lead_score || '—'}</span>
-                    <p className="text-gray-500 text-xs">score</p>
-                    {prospect.elevator_complaints > 0 && (
-                      <span className="text-red-400 text-xs">⚠ {prospect.elevator_complaints} complaints</span>
-                    )}
-                  </div>
-                </Link>
-              ))}
-              {prospects.length === 0 && !loading && <p className="text-gray-500 text-center py-8">No prospects found</p>}
-            </div>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* TDLR Expiring Soon */}
-            {tdlrStats.expiring_soon > 0 && (
-              <div className="bg-gray-800 rounded-xl border border-amber-700/40 p-5">
-                <h3 className="text-white font-bold mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-400" />TDLR Expiring Soon
-                </h3>
-                <p className="text-amber-400 text-2xl font-bold">{tdlrStats.expiring_soon}</p>
-                <p className="text-gray-400 text-sm mb-3">buildings with certs expiring in 90 days</p>
-                <p className="text-gray-500 text-xs">These buildings need elevator service now — perfect time to reach out.</p>
-                <Link to="/internal/analytics" className="mt-3 inline-block text-amber-400 hover:text-amber-300 text-sm">View in Analytics →</Link>
-              </div>
-            )}
-
-            {/* Emergency Work Orders */}
-            {tickets.filter(t => t.priority === 'emergency' && t.status !== 'completed' && t.status !== 'cancelled').length > 0 && (
-              <div className="bg-red-900/20 rounded-xl border border-red-700/50 p-5">
-                <h3 className="text-red-400 font-bold mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5" />Emergency — Immediate Action Required
-                </h3>
-                <div className="space-y-2">
-                  {tickets.filter(t => t.priority === 'emergency' && t.status !== 'completed' && t.status !== 'cancelled').map(t => (
-                    <Link key={t.id} to="/internal/work-orders"
-                      className="flex items-center justify-between p-3 bg-red-900/30 border border-red-700/40 rounded-lg hover:border-red-500/60 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-white text-sm font-medium truncate">{t.title}</p>
-                        {t.customer_name && <p className="text-red-300 text-xs mt-0.5">{t.customer_name}</p>}
-                      </div>
-                      <span className="text-red-400 text-xs flex-shrink-0 ml-2 font-bold">NOW →</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Open Work Orders */}
-            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-bold flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-amber-400" />Open Work Orders
-                </h3>
-                <Link to="/internal/work-orders" className="text-purple-400 hover:text-purple-300 text-xs">View All →</Link>
-              </div>
-              {openTickets.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-400 text-sm"><CheckCircle className="w-4 h-4" />All caught up</div>
-              ) : (
-                <div className="space-y-2">
-                  {openTickets.slice(0, 5).map(t => (
-                    <Link key={t.id} to="/internal/work-orders"
-                      className="flex items-center gap-3 p-2.5 bg-gray-700/50 border border-gray-600 rounded-lg hover:border-purple-600/50 transition-colors">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${t.priority === 'emergency' ? 'bg-red-400' : t.priority === 'high' ? 'bg-amber-400' : t.priority === 'medium' ? 'bg-blue-400' : 'bg-gray-400'}`}></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm truncate">{t.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {t.customer_name && <span className="text-gray-400 text-xs truncate">{t.customer_name}</span>}
-                          <span className={`text-xs capitalize flex-shrink-0 ${t.status === 'in_progress' ? 'text-amber-400' : t.status === 'scheduled' ? 'text-purple-400' : 'text-gray-500'}`}>{t.status?.replace('_', ' ')}</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                  {openTickets.length > 5 && (
-                    <Link to="/internal/work-orders" className="text-purple-400 text-xs hover:text-purple-300">+{openTickets.length - 5} more work orders →</Link>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* High Urgency Prospects */}
-            {highUrgencyProspects.length > 0 && (
-              <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-white font-bold flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-400" />High Urgency Prospects
-                  </h3>
-                  <Link to="/internal/leads" className="text-purple-400 hover:text-purple-300 text-xs">View All →</Link>
-                </div>
-                <div className="space-y-2">
-                  {highUrgencyProspects.slice(0, 4).map(p => (
-                    <Link key={p.id} to={'/internal/prospect/' + p.id}
-                      className="flex items-center justify-between p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:border-amber-500/40 transition-colors">
-                      <span className="text-white text-sm truncate">{p.name}</span>
-                      <span className="text-amber-400 text-xs font-bold flex-shrink-0 ml-2">{p.lead_score}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ fontSize: '13px', fontWeight: '600', color: 'rgba(255,255,255,0.6)' }}>{today}</p>
+          <p style={{ fontSize: '13px', color: '#a78bfa', fontWeight: '600' }}>{profile.company_name || 'Southwest Cabs Elevator Services'}</p>
         </div>
       </div>
 
-      {/* Auto Prospect Modal */}
-      {showAutoProspect && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-xl border border-blue-500/30 w-full max-w-lg">
-            <div className="p-6 border-b border-gray-700">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Search className="w-5 h-5 text-blue-400" />Find New Leads — Texas Auto-Prospect
-              </h2>
-              <p className="text-gray-400 text-sm mt-1">Searches 5 major Texas cities across 4 building types. AI filters and only imports leads scoring 70+.</p>
-            </div>
-            <div className="p-6">
-              {!autoRunning && !autoDone && (
-                <>
-                  <div className="mb-4">
-                    <p className="text-gray-300 text-sm font-medium mb-2">Cities to search:</p>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {customCities.map(city => (
-                        <span key={city} className="flex items-center gap-1 px-3 py-1 bg-blue-600/20 border border-blue-600/30 text-blue-400 rounded-full text-xs font-medium">
-                          {city}
-                          <button onClick={() => removeCity(city)} className="text-blue-400 hover:text-red-400 ml-1">×</button>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={newCity}
-                        onChange={e => { setNewCity(e.target.value); fetchCitySuggestions(e.target.value); }}
-                        onBlur={() => setTimeout(() => setShowCitySuggestions(false), 150)}
-                        placeholder="Add a city (e.g. Chicago, IL)..."
-                        className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                      />
-                      {showCitySuggestions && citySuggestions.length > 0 && (
-                        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg overflow-hidden shadow-xl">
-                          {citySuggestions.map(s => (
-                            <button key={s.place_id} onMouseDown={() => addCity(s.description)}
-                              className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 border-b border-gray-700 last:border-0">
-                              {s.description.replace(', USA', '')}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="bg-gray-700/50 rounded-lg p-3 mb-4">
-                    <p className="text-gray-400 text-xs">Building types: Hotels, Office Buildings, Hospitals, Apartments</p>
-                    <p className="text-blue-400 text-xs mt-1">Only prospects scoring 70+ will be imported. Keep this tab open while running.</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <button onClick={() => setShowAutoProspect(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Cancel</button>
-                    <button onClick={runAutoProspect} disabled={customCities.length === 0}
-                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                      <Search className="w-4 h-4" />Start Auto-Prospect ({customCities.length} cities)
-                    </button>
-                  </div>
-                </>
-              )}
-              {autoRunning && (
-                <div className="space-y-4">
-                  <p className="text-blue-400 text-sm font-medium">{autoProgress.step}</p>
-                  <div className="w-full bg-gray-700 rounded-full h-3">
-                    <div className="bg-blue-500 h-3 rounded-full transition-all duration-500"
-                      style={{ width: autoProgress.total ? `${(autoProgress.current / autoProgress.total) * 100}%` : '0%' }} />
-                  </div>
-                  <p className="text-gray-400 text-xs">{autoProgress.current} of {autoProgress.total} searches complete</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-3 text-center">
-                      <p className="text-green-400 font-bold text-2xl">{autoProgress.imported}</p>
-                      <p className="text-gray-400 text-xs">Imported</p>
-                    </div>
-                    <div className="bg-gray-700/50 rounded-lg p-3 text-center">
-                      <p className="text-gray-300 font-bold text-2xl">{autoProgress.skipped}</p>
-                      <p className="text-gray-400 text-xs">Skipped</p>
-                    </div>
-                  </div>
-                  <p className="text-amber-400 text-xs text-center">Keep this tab open while running...</p>
-                </div>
-              )}
-              {autoDone && (
-                <div className="text-center py-4">
-                  <div className="text-5xl mb-4">🎯</div>
-                  <h3 className="text-white font-bold text-xl mb-2">Auto-Prospect Complete!</h3>
-                  <p className="text-green-400 text-lg font-bold mb-1">{autoProgress.imported} new leads imported</p>
-                  <p className="text-gray-400 text-sm mb-6">All scored 70+ by AI — ready for outreach</p>
-                  <div className="flex gap-3">
-                    <button onClick={() => setShowAutoProspect(false)} className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Close</button>
-                    <Link to="/internal/leads" onClick={() => setShowAutoProspect(false)} className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium text-center">View Leads</Link>
-                  </div>
-                </div>
-              )}
+      {/* KPI Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+
+        {/* MRR */}
+        <div style={{ ...s.card, borderColor: mrr > 0 ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.07)' }}
+          onClick={() => navigate('/internal/analytics')}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <p style={s.label}>Monthly Revenue</p>
+            <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <DollarSign size={16} color="#6ee7b7" />
             </div>
           </div>
+          <p style={{ ...s.bigNum, color: mrr > 0 ? '#6ee7b7' : 'rgba(255,255,255,0.3)' }}>{fmt$(mrr)}</p>
+          <p style={s.sub}>{fmt$(arr)} ARR · {activeContracts} active contract{activeContracts !== 1 ? 's' : ''}</p>
         </div>
-      )}
+
+        {/* Pipeline Value */}
+        <div style={{ ...s.card }} onClick={() => navigate('/internal/pipeline')}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <p style={s.label}>Pipeline Value</p>
+            <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: 'rgba(124,58,237,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={16} color="#a78bfa" />
+            </div>
+          </div>
+          <p style={{ ...s.bigNum, color: '#a78bfa' }}>{fmt$(pipelineValue)}</p>
+          <p style={s.sub}>{prospects.filter(p => !['won','lost','archived'].includes(p.status)).length} active prospects</p>
+        </div>
+
+        {/* Work Orders */}
+        <div style={{ ...s.card, borderColor: emergencyWO.length > 0 ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.07)' }}
+          onClick={() => navigate('/internal/work-orders')}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <p style={s.label}>Work Orders</p>
+            <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: emergencyWO.length > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ClipboardList size={16} color={emergencyWO.length > 0 ? '#f87171' : '#fbbf24'} />
+            </div>
+          </div>
+          <p style={{ ...s.bigNum, color: emergencyWO.length > 0 ? '#f87171' : '#fbbf24' }}>{activeWO.length}</p>
+          <p style={s.sub}>
+            {emergencyWO.length > 0 ? `${emergencyWO.length} emergency · ` : ''}{inProgressWO.length} in progress · {openWO.length} open
+          </p>
+        </div>
+
+        {/* TDLR Opportunity */}
+        <div style={{ ...s.card, borderColor: 'rgba(251,191,36,0.2)' }}
+          onClick={() => navigate('/internal/tdlr')}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <p style={s.label}>TDLR Opportunity</p>
+            <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: 'rgba(251,191,36,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Shield size={16} color="#fbbf24" />
+            </div>
+          </div>
+          <p style={{ ...s.bigNum, color: '#fbbf24' }}>{expiringSoon.toLocaleString()}</p>
+          <p style={s.sub}>{expiredCerts.toLocaleString()} already expired · 90-day window</p>
+        </div>
+      </div>
+
+      {/* Main Content — 3 columns */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+
+        {/* Top Prospects */}
+        <div style={{ ...s.card, gridColumn: '1 / 2' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Star size={16} color="#a78bfa" />
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Top Prospects</p>
+            </div>
+            <Link to="/internal/leads" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View All <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {topProspects.length === 0 && (
+              <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: '24px 0' }}>No prospects yet</p>
+            )}
+            {topProspects.map(p => (
+              <div key={p.id} onClick={() => navigate(`/internal/prospect/${p.id}`)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '9px', background: 'rgba(255,255,255,0.03)', cursor: 'pointer', transition: 'background 0.15s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: '13px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</p>
+                  <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>{p.city || ''}{p.city && p.state ? ', ' : ''}{p.state || ''}</p>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: '15px', fontWeight: '800', color: (p.lead_score||0) >= 70 ? '#6ee7b7' : (p.lead_score||0) >= 50 ? '#fbbf24' : '#9ca3af' }}>
+                    {p.lead_score || '—'}
+                  </div>
+                  <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>score</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Active Work Orders */}
+        <div style={{ ...s.card, gridColumn: '2 / 3' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ClipboardList size={16} color="#fbbf24" />
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Active Work Orders</p>
+            </div>
+            <Link to="/internal/work-orders" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View All <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {activeWO.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <CheckCircle size={24} color="#6ee7b7" style={{ margin: '0 auto 8px' }} />
+                <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.3)' }}>All caught up</p>
+              </div>
+            )}
+            {activeWO.slice(0, 6).map(wo => {
+              const pc = PRIORITY_COLOR[wo.priority] || PRIORITY_COLOR.medium;
+              const sc = STATUS_COLOR[wo.status] || { text: '#9ca3af' };
+              return (
+                <div key={wo.id} onClick={() => navigate('/internal/work-orders')}
+                  style={{ padding: '10px 12px', borderRadius: '9px', background: 'rgba(255,255,255,0.03)', cursor: 'pointer', borderLeft: `3px solid ${pc.border}` }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '600', color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{wo.title}</p>
+                    <span style={{ fontSize: '10px', fontWeight: '600', color: pc.text, background: pc.bg, padding: '2px 6px', borderRadius: '4px', marginLeft: '8px', flexShrink: 0 }}>{wo.priority}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>{wo.customer_name || 'No customer'}</p>
+                    <p style={{ fontSize: '11px', color: sc.text }}>{wo.status?.replace('_',' ')}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* TDLR Intelligence snapshot */}
+        <div style={{ ...s.card, gridColumn: '3 / 4' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Shield size={16} color="#fbbf24" />
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>TDLR Snapshot</p>
+            </div>
+            <Link to="/internal/tdlr" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View All <ArrowRight size={12} />
+            </Link>
+          </div>
+
+          {/* Stat rows */}
+          {[
+            { label: 'Expired Now', value: expiredCerts.toLocaleString(), color: '#f87171', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)', desc: 'Operating illegally' },
+            { label: 'Expiring 30 days', value: parseInt(tdlr.expiring_soon||0) > 0 ? Math.round(parseInt(tdlr.expiring_soon)/3).toLocaleString() : '0', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.2)', desc: 'Highest urgency' },
+            { label: 'Expiring 90 days', value: expiringSoon.toLocaleString(), color: '#a78bfa', bg: 'rgba(124,58,237,0.1)', border: 'rgba(124,58,237,0.2)', desc: 'Active opportunity' },
+            { label: 'Total TX Elevators', value: parseInt(tdlr.total_records||0).toLocaleString(), color: '#9ca3af', bg: 'rgba(107,114,128,0.1)', border: 'rgba(107,114,128,0.2)', desc: 'Market size' },
+          ].map(({ label, value, color, bg, border, desc }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '9px', background: bg, border: `1px solid ${border}`, marginBottom: '8px' }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '2px' }}>{label}</p>
+                <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>{desc}</p>
+              </div>
+              <p style={{ fontSize: '20px', fontWeight: '800', color, letterSpacing: '-0.5px' }}>{value}</p>
+            </div>
+          ))}
+
+          <Link to="/internal/tdlr"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', padding: '10px', marginTop: '4px', background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '9px', color: '#a78bfa', fontSize: '13px', fontWeight: '600', textDecoration: 'none' }}>
+            <Zap size={14} />Find Leads Now
+          </Link>
+        </div>
+      </div>
+
+      {/* Bottom Row — Contracts + Recent Invoices */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+
+        {/* Contracts summary */}
+        <div style={{ ...s.card }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BarChart2 size={16} color="#6ee7b7" />
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Contract Performance</p>
+            </div>
+            <Link to="/internal/analytics" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Analytics <ArrowRight size={12} />
+            </Link>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            {[
+              { label: 'Monthly Revenue', value: fmt$(mrr), color: '#6ee7b7' },
+              { label: 'Annual Revenue', value: fmt$(arr), color: '#6ee7b7' },
+              { label: 'Active Contracts', value: activeContracts, color: '#a78bfa' },
+              { label: 'Elevators Contracted', value: elevatorsContracted, color: '#a78bfa' },
+              { label: 'Pipeline Value', value: fmt$(pipelineValue), color: '#fbbf24' },
+              { label: 'Total Prospects', value: prospects.length, color: '#60a5fa' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ padding: '14px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>{label}</p>
+                <p style={{ fontSize: '20px', fontWeight: '800', color, letterSpacing: '-0.5px' }}>{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Invoices */}
+        <div style={{ ...s.card }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <DollarSign size={16} color="#6ee7b7" />
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Recent Invoices</p>
+            </div>
+            <Link to="/internal/invoices" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View All <ArrowRight size={12} />
+            </Link>
+          </div>
+          {recentInvoices.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.3)' }}>No invoices yet</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {recentInvoices.map(inv => {
+                const isPaid = inv.status === 'paid';
+                const isOverdue = inv.status === 'overdue';
+                const statusColor = isPaid ? '#6ee7b7' : isOverdue ? '#f87171' : '#fbbf24';
+                const statusBg = isPaid ? 'rgba(16,185,129,0.1)' : isOverdue ? 'rgba(239,68,68,0.1)' : 'rgba(251,191,36,0.1)';
+                return (
+                  <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '9px', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {inv.invoice_number || 'INV-' + inv.id}
+                      </p>
+                      <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>
+                        {new Date(inv.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <p style={{ fontSize: '15px', fontWeight: '700', color: '#fff' }}>{fmt$(inv.total_amount || inv.amount)}</p>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: statusColor, background: statusBg, padding: '3px 8px', borderRadius: '6px' }}>
+                      {inv.status || 'draft'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
-export default InternalDashboard;
+export default Dashboard;
