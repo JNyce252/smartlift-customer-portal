@@ -289,7 +289,7 @@ const Analytics = () => {
             </div>
             {true && (
                   <Link to="/internal/tdlr" className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors mt-2 mb-2">
-                    View TDLR Intelligence →
+                    View Building Registry →
                   </Link>
                 )}
                 {(tdlrStats.expired_certs > 0 || tdlrStats.expiring_soon > 0) && (

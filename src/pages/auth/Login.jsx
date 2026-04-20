@@ -63,7 +63,7 @@ const Login = () => {
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '100px', padding: '6px 14px', marginBottom: '28px' }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#7c3aed', animation: 'pulse 2s infinite' }} />
-            <span style={{ fontSize: '12px', fontWeight: '600', color: '#a78bfa', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Live TDLR Intelligence</span>
+            <span style={{ fontSize: '12px', fontWeight: '600', color: '#a78bfa', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Live Building Registry</span>
           </div>
 
           <h1 style={{ fontSize: '48px', fontWeight: '800', color: '#fff', lineHeight: '1.1', letterSpacing: '-1.5px', marginBottom: '20px' }}>

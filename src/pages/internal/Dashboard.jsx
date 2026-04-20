@@ -278,12 +278,12 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* TDLR Intelligence snapshot */}
+        {/* Building Registry snapshot */}
         <div style={{ ...s.card, gridColumn: '3 / 4' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Shield size={16} color="#fbbf24" />
-              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>TDLR Snapshot</p>
+              <p style={{ fontSize: '14px', fontWeight: '700', color: '#fff' }}>Registry Snapshot</p>
             </div>
             <Link to="/internal/tdlr" style={{ fontSize: '12px', color: '#a78bfa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
               View All <ArrowRight size={12} />

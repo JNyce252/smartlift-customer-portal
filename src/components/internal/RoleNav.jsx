@@ -10,7 +10,7 @@ import {
 const NAV_CONFIG = {
   owner: [
     { label: 'Dashboard',         path: '/internal/dashboard',   icon: LayoutDashboard },
-    { label: 'TDLR Intelligence', path: '/internal/tdlr',        icon: Shield },
+    { label: 'Building Registry', path: '/internal/tdlr',        icon: Shield },
     { label: 'Lead Search',       path: '/internal/leads',       icon: Search },
     { label: 'Pipeline',          path: '/internal/pipeline',    icon: Zap },
     { label: 'Customers',         path: '/internal/customers',   icon: Users },
@@ -23,7 +23,7 @@ const NAV_CONFIG = {
   ],
   sales: [
     { label: 'Dashboard',         path: '/internal/dashboard',   icon: LayoutDashboard },
-    { label: 'TDLR Intelligence', path: '/internal/tdlr',        icon: Shield },
+    { label: 'Building Registry', path: '/internal/tdlr',        icon: Shield },
     { label: 'Lead Search',       path: '/internal/leads',       icon: Search },
     { label: 'Pipeline',          path: '/internal/pipeline',    icon: Zap },
     { label: 'Customers',         path: '/internal/customers',   icon: Users },
