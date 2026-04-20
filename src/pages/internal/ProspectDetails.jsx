@@ -86,82 +86,45 @@ const ProspectDetails = () => {
       setContacts(Array.isArray(c) ? c : []);
 
       if (p.website) {
-        try { 
+        try {
           const domain = new URL(p.website).hostname.replace('www.', '');
           setHunterDomain(domain);
         } catch {}
-      } else if (p.name) {
-        // Try to guess domain from known brands
-        const knownDomains = {
-          'hyatt': 'hyatt.com', 'marriott': 'marriott.com', 'hilton': 'hilton.com',
-          'westin': 'marriott.com', 'sheraton': 'marriott.com', 'omni': 'omnihotels.com',
-          'four seasons': 'fourseasons.com', 'intercontinental': 'ihg.com',
-          'holiday inn': 'ihg.com', 'doubletree': 'hilton.com', 'courtyard': 'marriott.com',
-          'hampton inn': 'hilton.com', 'best western': 'bestwestern.com',
-          'drury': 'druryhotels.com', 'at&t': 'att.com', 'methodist': 'methodisthealth.com',
-          'st. david': 'stdavids.com', 'baylor': 'bswhealth.com',
-        };
-        const nameLower = p.name.toLowerCase();
-        for (const [key, val] of Object.entries(knownDomains)) {
-          if (nameLower.includes(key)) { setHunterDomain(val); break; }
-        }
+      } else if (p.owner_name) {
+        setHunterDomain(p.owner_name);
       }
     })
     .catch(e => setError(e.message))
     .finally(() => setLoading(false));
   }, [id]);
 
-  // Auto-search Hunter when page loads if no contacts saved
+  // Auto-search Hunter when page loads if no contacts saved and a website domain is known
   useEffect(() => {
     if (loading || contacts.length > 0 || !prospect) return;
-    
+
     let domain = null;
     if (prospect.website) {
       try { domain = new URL(prospect.website).hostname.replace('www.', ''); } catch {}
     }
-    if (!domain) {
-      const knownDomains = {
-        'hyatt': 'hyatt.com', 'marriott': 'marriott.com', 'hilton': 'hilton.com',
-        'westin': 'marriott.com', 'sheraton': 'marriott.com', 'omni': 'omnihotels.com',
-        'four seasons': 'fourseasons.com', 'jw marriott': 'marriott.com',
-        'renaissance': 'marriott.com', 'intercontinental': 'ihg.com',
-        'aloft': 'marriott.com', 'thompson': 'hyatt.com', 'w austin': 'marriott.com',
-        'hampton inn': 'hilton.com', 'comfort inn': 'choicehotels.com',
-        'hyatt regency': 'hyatt.com', 'marriott marquis': 'marriott.com',
-        'holiday inn': 'ihg.com', 'doubletree': 'hilton.com', 'courtyard': 'marriott.com',
-        'fairfield': 'marriott.com', 'homewood': 'hilton.com', 'tru by hilton': 'hilton.com',
-        'best western': 'bestwestern.com', 'country inn': 'radissonhotels.com',
-        'baylor scott': 'bswhealth.com', 'methodist': 'mhs.net',
-        'medical city': 'medicalcityhealthcare.com', 'parkland': 'parklandhospital.com',
-        'ut southwestern': 'utsouthwestern.edu', 'texas health': 'texashealth.org',
-        'children': 'childrens.com', 'presbyterian': 'phhs.org',
-        'simon property': 'simon.com', 'brookfield': 'brookfieldproperties.com',
-        'cushman': 'cushmanwakefield.com', 'jll': 'jll.com',
-        'cbre': 'cbre.com', 'colliers': 'colliers.com',
-      };
-      const nameLower = prospect.name.toLowerCase();
-      for (const [key, val] of Object.entries(knownDomains)) {
-        if (nameLower.includes(key)) { domain = val; break; }
-      }
-    }
+    // Only auto-search when we have a verified website domain — not on owner_name,
+    // since company-name searches are less reliable and should be user-initiated.
     if (domain) {
       setHunterDomain(domain);
-      // Auto trigger search
       const autoSearch = async () => {
         setHunterLoading(true);
         try {
           const token = localStorage.getItem('smartlift_token');
-      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${domain}`, {
-        headers: { ...(token && { Authorization: `Bearer ${token}` }) }
-      });
+          const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${encodeURIComponent(domain)}`, {
+            headers: { ...(token && { Authorization: `Bearer ${token}` }) }
+          });
           const data = await res.json();
-          if (!data.data?.emails?.length) { setHunterError('No contacts found at ' + domain + '. Try entering the domain manually below.'); return; }
-          const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
+          if (!data.data?.emails?.length) { setHunterError('No contacts found at ' + domain + '. Try searching by owner entity name below.'); return; }
+          const h = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
           const saved = [];
           for (const email of data.data.emails) {
             try {
               const r = await fetch(`${BASE_URL}/prospects/${prospect.id}/contacts`, {
-                method: 'POST', headers,
+                method: 'POST', headers: h,
                 body: JSON.stringify({ first_name: email.first_name, last_name: email.last_name, email: email.value, title: email.position, linkedin_url: email.linkedin, confidence: email.confidence, source: 'hunter' })
               });
               if (r.ok) saved.push(await r.json());
@@ -199,7 +162,14 @@ const ProspectDetails = () => {
     setHunterError(null);
     try {
       const token2 = localStorage.getItem('smartlift_token');
-      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${hunterDomain}`, {
+      // TODO: This heuristic ("contains dot = domain") has edge cases — e.g.,
+      // company names with "Co." abbreviation. Acceptable for demo; replace with
+      // explicit input type toggle post-demo.
+      const isDomain = hunterDomain.includes('.');
+      const searchParam = isDomain
+        ? `domain=${encodeURIComponent(hunterDomain)}`
+        : `company=${encodeURIComponent(hunterDomain)}`;
+      const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?${searchParam}`, {
         headers: { ...(token2 && { Authorization: `Bearer ${token2}` }) }
       });
       const data = await res.json();
@@ -727,6 +697,19 @@ const ProspectDetails = () => {
                 </div>
               ))}
             </div>
+            <div className="mt-3 pt-3 border-t border-gray-700/50 flex items-center justify-between">
+              <div>
+                <p className="text-gray-400 text-xs mb-0.5">Owner of Record</p>
+                <p className="text-white text-sm font-medium">{prospect.owner_name || 'Not listed'}</p>
+              </div>
+              {prospect.owner_name && (
+                <a href={`https://opencorporates.com/companies?jurisdiction_code=us_tx&q=${encodeURIComponent(prospect.owner_name)}`}
+                   target="_blank" rel="noreferrer"
+                   className="flex items-center gap-1 text-purple-400 hover:text-purple-300 text-xs transition-colors">
+                  OpenCorporates <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
           </div>
 
           <div className="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-5">
@@ -943,7 +926,7 @@ const ProspectDetails = () => {
               <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
               <input type="text" value={hunterDomain} onChange={e => setHunterDomain(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && searchHunter()}
-                placeholder={prospect.website ? new URL(prospect.website).hostname.replace("www.","") + " (auto-filled)" : "e.g. marriott.com, hilton.com, omnihotels.com"}
+                placeholder={prospect.owner_name || 'Owner entity name or website domain'}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm" />
             </div>
             <button onClick={searchHunter} disabled={hunterLoading || !hunterDomain || contacts.length > 0}
@@ -952,9 +935,9 @@ const ProspectDetails = () => {
             </button>
           </div>
           <p className="text-gray-500 text-xs mb-3">
-            {contacts.length > 0 
-              ? <span className="text-green-500">✓ Contacts loaded from cache — no Hunter.io credit used</span> 
-              : <span className="text-amber-400">Uses 1 Hunter.io credit · Enter the company website domain (e.g. marriott.com, hilton.com)</span>}
+            {contacts.length > 0
+              ? <span className="text-green-500">✓ Contacts loaded from cache — no Hunter.io credit used</span>
+              : <span className="text-amber-400">Uses 1 Hunter.io credit · Enter the owner entity name (from TDLR) or website domain</span>}
           </p>
 
           {hunterError && <p className="text-red-400 text-sm mb-4">{hunterError}</p>}
