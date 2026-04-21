@@ -10,14 +10,13 @@ const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execu
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 
 const BUILDING_TYPES = [
-  { label: 'Hotels', query: 'hotel' },
-  { label: 'Office Buildings', query: 'office building' },
-  { label: 'Apartments', query: 'apartment complex' },
-  { label: 'Hospitals', query: 'hospital' },
-  { label: 'Government', query: 'government building' },
-  { label: 'Shopping Centers', query: 'shopping mall' },
-  { label: 'Universities', query: 'university' },
-  { label: 'All Buildings', query: 'building' },
+  { label: 'Hotels', googleTypes: ['lodging'] },
+  { label: 'Apartments', googleTypes: ['apartment_complex'] },
+  { label: 'Hospitals', googleTypes: ['hospital'] },
+  { label: 'Universities', googleTypes: ['university'] },
+  { label: 'Shopping Centers', googleTypes: ['shopping_mall'] },
+  { label: 'Government', googleTypes: ['city_hall', 'courthouse', 'local_government_office'] },
+  { label: 'Corporate Office Tower', googleTypes: ['establishment'], requiresQualifier: true },
 ];
 
 const LeadSearch = () => {
@@ -55,6 +54,7 @@ const LeadSearch = () => {
   const [placeLoading, setPlaceLoading] = useState(false);
   const [importing, setImporting] = useState({});
   const [imported, setImported] = useState({});
+  const [rawResultCount, setRawResultCount] = useState(0);
 
   useEffect(() => {
     api.getProspects()
@@ -112,60 +112,64 @@ const LeadSearch = () => {
     setPlaceLoading(true);
     setError(null);
     setPlaceResults([]);
+    setRawResultCount(0);
     try {
-      const typeQuery = selectedType.query;
-      const nameQuery = buildingName.trim();
-
-      // Geocode using Google Maps SDK
-      if (!window.google) { setError('Maps not loaded yet — please refresh the page'); setPlaceLoading(false); return; }
-      const geocoder = new window.google.maps.Geocoder();
-      const geoResult = await new Promise((resolve) => {
-        geocoder.geocode({ address: location }, (results, status) => {
-          if (status === 'OK' && results?.[0]) resolve(results[0]);
-          else resolve(null);
-        });
-      });
-
-      if (!geoResult) {
+      // Geocode via REST API
+      const geoRes = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${PLACES_KEY}`
+      );
+      const geoData = await geoRes.json();
+      if (!geoData.results?.length) {
         setError('Could not find that location — try adding a state, e.g. "Dallas, TX"');
         setPlaceLoading(false);
         return;
       }
+      const geoResult = geoData.results[0];
+      const lat = geoResult.geometry.location.lat;
+      const lng = geoResult.geometry.location.lng;
+      const geoCity = geoResult.address_components?.find(c => c.types.includes('locality'))?.long_name
+        || location.split(',')[0].trim();
+      const geoState = geoResult.address_components?.find(c => c.types.includes('administrative_area_level_1'))?.short_name || 'TX';
 
-      const lat = geoResult.geometry.location.lat();
-      const lng = geoResult.geometry.location.lng();
-      const keyword = nameQuery ? `${nameQuery} ${typeQuery}` : typeQuery;
-
-      // Search with increasing radii — city first, then expand
-      const radii = [8047, 24140, 48280, 96560]; // 5mi, 15mi, 30mi, 60mi
+      // Search with increasing radii using Places API (New)
+      const radii = [8000, 24000, 48000, 96000]; // ~5mi, 15mi, 30mi, 60mi
       let allResults = [];
 
-      for (const radius of radii) {
-        const results = await new Promise((resolve) => {
-          const mapDiv = document.createElement('div');
-          const map = new window.google.maps.Map(mapDiv);
-          const service = new window.google.maps.places.PlacesService(map);
-          service.nearbySearch({ location: { lat, lng }, radius, keyword }, (r, status) => {
-            resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? r || [] : []);
-          });
+      for (const radiusMeters of radii) {
+        const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': PLACES_KEY,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount'
+          },
+          body: JSON.stringify({
+            includedTypes: selectedType.googleTypes,
+            maxResultCount: 20,
+            locationRestriction: {
+              circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters }
+            }
+          })
         });
-
-        // Add new results not already found
-        for (const p of results) {
-          if (!allResults.find(r => r.google_place_id === p.place_id)) {
+        const data = await res.json();
+        for (const p of (data.places || [])) {
+          if (!allResults.find(r => r.google_place_id === p.id)) {
+            const pLat = p.location?.latitude ?? 0;
+            const pLng = p.location?.longitude ?? 0;
             allResults.push({
-              google_place_id: p.place_id,
-              name: p.name,
-              address: p.formatted_address || p.vicinity,
-              city: (p.vicinity || '').split(',')[0]?.trim() || location,
-              state: geoResult?.address_components?.find(c => c.types.includes('administrative_area_level_1'))?.short_name || 'TX',
+              google_place_id: p.id,
+              name: p.displayName?.text || '',
+              address: p.formattedAddress || '',
+              city: geoCity,
+              state: geoState,
               rating: p.rating,
-              total_reviews: p.user_ratings_total,
-              type: selectedType.query.split(' ')[0],
-              lat: typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat,
-              lng: typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng,
+              total_reviews: p.userRatingCount,
+              types: p.types || [],
+              lat: pLat,
+              lng: pLng,
               distance_meters: Math.round(Math.sqrt(
-                Math.pow(((typeof p.geometry?.location?.lat === 'function' ? p.geometry.location.lat() : p.geometry?.location?.lat) - lat) * 111000, 2) + Math.pow(((typeof p.geometry?.location?.lng === 'function' ? p.geometry.location.lng() : p.geometry?.location?.lng) - lng) * 111000 * Math.cos(lat * Math.PI/180), 2)
+                Math.pow((pLat - lat) * 111000, 2) +
+                Math.pow((pLng - lng) * 111000 * Math.cos(lat * Math.PI / 180), 2)
               ))
             });
           }
@@ -178,7 +182,48 @@ const LeadSearch = () => {
         return;
       }
 
-      // Send to AI for scoring and filtering
+      // Corporate Office Tower: run Claude qualifier to remove single-tenant offices
+      if (selectedType.requiresQualifier) {
+        try {
+          const token = localStorage.getItem('smartlift_token');
+          const qRes = await fetch(`${BASE_URL}/lead-search/qualify-office-results`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            body: JSON.stringify({
+              results: allResults.slice(0, 20).map(r => ({
+                name: r.name,
+                formattedAddress: r.address,
+                types: r.types || [],
+                rating: r.rating
+              }))
+            })
+          });
+          const qData = await qRes.json();
+          if (Array.isArray(qData.results)) {
+            allResults = allResults.filter((_, i) => qData.results[i]?.keep !== false);
+          }
+        } catch {
+          // qualifier failure is non-blocking — proceed with unfiltered results
+        }
+      }
+
+      // Client-side filter by building name if provided
+      const nameFilter = buildingName.trim().toLowerCase();
+      const nameFiltered = nameFilter
+        ? allResults.filter(r => r.name.toLowerCase().includes(nameFilter))
+        : allResults;
+
+      if (nameFiltered.length === 0) {
+        setError(nameFilter
+          ? `No results matched "${buildingName}" — try a broader name or clear the building name field`
+          : 'No results found — try a different building type or location'
+        );
+        return;
+      }
+
+      setRawResultCount(allResults.length);
+
+      // AI scoring
       setAiScoring(true);
       const cityName = location.split(',')[0].trim();
       const stateName = location.split(',')[1]?.trim() || 'TX';
@@ -189,7 +234,14 @@ const LeadSearch = () => {
         const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
           method: 'POST', headers,
           body: JSON.stringify({
-            results: allResults.slice(0, 20),
+            results: nameFiltered.slice(0, 20).map(r => ({
+              name: r.name,
+              rating: r.rating,
+              buildingType: selectedType.label,
+              google_types: r.types || [],
+              city: cityName,
+              state: stateName
+            })),
             buildingType: selectedType.label,
             city: cityName,
             state: stateName
@@ -197,16 +249,20 @@ const LeadSearch = () => {
         });
         const aiData = await aiRes.json();
         if (aiData.results?.length) {
-          setPlaceResults(aiData.results);
+          const scored = nameFiltered.slice(0, 20).map((r, i) => ({
+            ...r,
+            ai_score: aiData.results[i]?.ai_score || 50,
+            ai_reason: aiData.results[i]?.ai_reason,
+            should_import: aiData.results[i]?.should_import !== false
+          }));
+          setPlaceResults(scored);
         } else {
-          // Fallback to original results if AI fails
-          allResults.sort((a, b) => a.distance_meters - b.distance_meters);
-          setPlaceResults(allResults.slice(0, 20));
+          nameFiltered.sort((a, b) => a.distance_meters - b.distance_meters);
+          setPlaceResults(nameFiltered.slice(0, 20));
         }
       } catch {
-        // Fallback to original results if AI fails
-        allResults.sort((a, b) => a.distance_meters - b.distance_meters);
-        setPlaceResults(allResults.slice(0, 20));
+        nameFiltered.sort((a, b) => a.distance_meters - b.distance_meters);
+        setPlaceResults(nameFiltered.slice(0, 20));
       } finally {
         setAiScoring(false);
       }
@@ -222,16 +278,18 @@ const LeadSearch = () => {
     try {
       let enriched = { ...place };
       try {
-        const details = await new Promise((resolve) => {
-          const mapDiv = document.createElement('div');
-          const map = new window.google.maps.Map(mapDiv);
-          const service = new window.google.maps.places.PlacesService(map);
-          service.getDetails({ placeId: place.google_place_id, fields: ['website','formatted_phone_number'] }, (r, status) => {
-            resolve(status === window.google.maps.places.PlacesServiceStatus.OK ? r || {} : {});
-          });
-        });
-        if (details.website) enriched.website = details.website;
-        if (details.formatted_phone_number) enriched.phone = details.formatted_phone_number;
+        const detailRes = await fetch(
+          `https://places.googleapis.com/v1/places/${place.google_place_id}`,
+          {
+            headers: {
+              'X-Goog-Api-Key': PLACES_KEY,
+              'X-Goog-FieldMask': 'websiteUri,nationalPhoneNumber'
+            }
+          }
+        );
+        const details = await detailRes.json();
+        if (details.websiteUri) enriched.website = details.websiteUri;
+        if (details.nationalPhoneNumber) enriched.phone = details.nationalPhoneNumber;
       } catch {}
       const newProspect = await api.createProspect(enriched);
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
@@ -400,8 +458,8 @@ const LeadSearch = () => {
               {/* Building type selector */}
               <div className="flex gap-2 flex-wrap mb-4">
                 {BUILDING_TYPES.map(type => (
-                  <button key={type.query} onClick={() => setSelectedType(type)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedType.query === type.query ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+                  <button key={type.label} onClick={() => setSelectedType(type)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedType.label === type.label ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
                     {type.label}
                   </button>
                 ))}
@@ -443,6 +501,11 @@ const LeadSearch = () => {
               <p className="text-gray-500 text-xs mt-3">Searches within 55 miles — works anywhere in the United States</p>
             </div>
 
+            {buildingName.trim() && placeResults.length > 0 && (
+              <p className="text-purple-400 text-sm mb-2">
+                Showing {placeResults.length} of {rawResultCount} results matching &ldquo;{buildingName}&rdquo;
+              </p>
+            )}
             <div className="space-y-4">
               {placeResults.map(place => (
                 <div key={place.google_place_id} className="bg-gray-800 rounded-lg border border-gray-700 p-6 hover:border-purple-500 transition-colors">
