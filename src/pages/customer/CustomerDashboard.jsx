@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Wrench, FileText, DollarSign, ArrowUpDown, MessageSquare, Calendar, Clock, CheckCircle, LogOut, Phone, AlertCircle, ChevronRight, Shield, Bell, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -16,7 +17,7 @@ const CustomerDashboard = () => {
   const [error, setError] = useState(null);
 
   const headers = {
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   useEffect(() => {

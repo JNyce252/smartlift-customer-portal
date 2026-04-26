@@ -1,6 +1,7 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authService } from '../../services/authService';
 import {
   Building2, AlertTriangle, TrendingUp, Filter, Plus, Search,
   MapPin, Calendar, ChevronRight, ChevronDown, RefreshCw, Mail, X, Shield,
@@ -58,7 +59,7 @@ const BuildingRegistry = () => {
 
   const authHeader = () => ({
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token'),
+    Authorization: 'Bearer ' + authService.getIdToken(),
   });
 
   // Restore saved preferences once they load

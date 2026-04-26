@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Building2, Plus, X, Search, AlertTriangle, CheckCircle, Wrench, Calendar, Hash, Layers, ArrowUpDown, Shield, TrendingUp, Edit2 , Download } from 'lucide-react';
 import { exportEquipmentCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -42,7 +43,7 @@ const EquipmentRegistry = () => {
 
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   const fetchData = async () => {

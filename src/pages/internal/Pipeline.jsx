@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Building2, Star, Brain, Eye, GripVertical } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -51,7 +52,7 @@ const Pipeline = () => {
 
   const clearColumn = async (columnId) => {
     if (!window.confirm(`Move all prospects from this column to Lost?`)) return;
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     const colProspects = prospects.filter(p => (p.status || 'new') === columnId);
     for (const p of colProspects) {
@@ -69,7 +70,7 @@ const Pipeline = () => {
   };
 
   const updateStatus = async (prospectId, newStatus) => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     await fetch(`${BASE_URL}/prospects/${prospectId}/status`, {
       method: 'PATCH', headers,
@@ -136,7 +137,7 @@ const Pipeline = () => {
     if (!pendingWonProspect) return;
     setSavingContract(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/contracts`, {
         method: 'POST', headers,

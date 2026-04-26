@@ -1,0 +1,13 @@
+{
+  "_note": "Second pool — appears unused. Pulled 2026-04-26.",
+  "Id": "us-east-1_qOsAeoce6",
+  "Name": "User pool - gi9chs",
+  "DeletionProtection": "ACTIVE",
+  "EstimatedNumberOfUsers": 0,
+  "UsernameAttributes": ["email", "phone_number"],
+  "SmsConfigurationFailure": "SNSSandbox",
+  "_FINDINGS": {
+    "UNUSED": "Zero users, created Mar 24 2026, not referenced by frontend (.env.local points to the main pool). Likely an experimental/abandoned pool. Recommend deletion to reduce surface area.",
+    "SMS_SANDBOX": "SNS still in sandbox — SMS auth wouldn't work to non-allowlisted numbers anyway."
+  }
+}

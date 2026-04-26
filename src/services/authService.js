@@ -118,11 +118,46 @@ class AuthService {
     });
   }
 
+  /** Stored auth blob: { id, email, name, role, groups, token (access), idToken } */
+  _stored() {
+    try {
+      const s = localStorage.getItem(AUTH_STORAGE_KEY);
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  }
+
+  /** Cognito access token. Use only for non-API consumers (e.g., Cognito SDK self-actions). */
   getToken() {
-    const userStr = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!userStr) return null;
-    return JSON.parse(userStr)?.token;
+    return this._stored()?.token || null;
+  }
+
+  /** Cognito ID token — this is what the API expects in Authorization headers.
+   *  ID token carries cognito:groups + email, which the Lambda's getCompanyId()
+   *  and getUserRole() decode. Falls back to access token only if idToken absent. */
+  getIdToken() {
+    const u = this._stored();
+    return u?.idToken || u?.token || null;
   }
 }
 
 export const authService = new AuthService();
+
+/**
+ * Build authenticated request headers using the ID token.
+ * Use this everywhere for fetch() to the smartlift-api API Gateway.
+ *
+ *   import { authHeaders } from '../../services/authService';
+ *   const res = await fetch(`${BASE_URL}/prospects`, { headers: authHeaders() });
+ *   const res = await fetch(url, { method: 'POST', headers: authHeaders(), body: ... });
+ *
+ * Returns Content-Type + Authorization (when a token is available). Caller can
+ * pass extra headers to merge in.
+ */
+export const authHeaders = (extra = {}) => {
+  const token = authService.getIdToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+    ...extra,
+  };
+};

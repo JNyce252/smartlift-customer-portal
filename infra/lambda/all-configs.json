@@ -1,0 +1,50 @@
+{
+  "_note": "Full get-function-configuration output for each user-written Lambda. Pulled 2026-04-26.",
+  "smartlift-api": {
+    "FunctionArn": "arn:aws:lambda:us-east-1:416142471465:function:smartlift-api",
+    "Runtime": "nodejs20.x",
+    "Handler": "index.handler",
+    "Timeout": 120,
+    "MemorySize": 512,
+    "VPC": "NONE (removed from VPC for outbound API access)",
+    "Role": "arn:aws:iam::416142471465:role/service-role/smartlift-api-role-zg1jcbas",
+    "Layers": ["arn:aws:lambda:us-east-1:416142471465:layer:pg-postgres-driver:1"],
+    "Environment": {
+      "DB_HOST": "hotel-leads-aurora.cluster-cgnwaccyi4a8.us-east-1.rds.amazonaws.com",
+      "DB_PORT": "5432",
+      "DB_USER": "hotelapp",
+      "DB_NAME": "hotelleads",
+      "DB_PASSWORD": "<<< REDACTED — see infra/SECRETS.md >>>",
+      "CLAUDE_MODEL": "us.anthropic.claude-opus-4-7",
+      "GOOGLE_MAPS_KEY": "<<< REDACTED — see infra/SECRETS.md >>>"
+    }
+  },
+  "smartlift-review-analyzer": {
+    "Timeout": 60, "MemorySize": 256,
+    "Role": "shared (smartlift-api-role-zg1jcbas)",
+    "Environment": "DB_* same as smartlift-api"
+  },
+  "smartlift-tdlr-refresh": {
+    "Timeout": 300, "MemorySize": 512,
+    "Role": "shared",
+    "Environment": "DB_* only"
+  },
+  "smartlift-ai-scorer": {
+    "Timeout": 300, "MemorySize": 256,
+    "VPC": "vpc-06cec9c7bd56c515d, subnets [subnet-0360c60e9ee3d9cd8, subnet-0fc3605ad04dca501], SG sg-0a10102c1e09c540e",
+    "Role": "shared",
+    "Layers": ["pg-postgres-driver:1"],
+    "Environment": "DB_* only"
+  },
+  "smartlift-maintenance-reminder": {
+    "Timeout": 60, "MemorySize": 256,
+    "Role": "shared",
+    "Environment": "DB_* only"
+  },
+  "golden-signature-contact": {
+    "Handler": "gs-contact.handler",
+    "Timeout": 60, "MemorySize": 128,
+    "Role": "shared (overprivileged for a contact form)",
+    "Environment": "(none)"
+  }
+}

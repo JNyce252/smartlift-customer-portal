@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Phone, User, DollarSign, TrendingUp, AlertCircle, Archive, ArchiveRestore } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -14,7 +15,7 @@ const CustomerManagement = () => {
   const [refreshTick, setRefreshTick] = useState(0);
 
   const fetchCustomers = () => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     fetch(`${BASE_URL}/customers`, { headers })
       .then(r => r.json())
@@ -26,7 +27,7 @@ const CustomerManagement = () => {
   useEffect(() => { fetchCustomers(); }, []);
 
   const handleArchive = async (id, archived) => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     await fetch(`${BASE_URL}/customers/${id}/archive`, {
       method: 'PATCH', headers,

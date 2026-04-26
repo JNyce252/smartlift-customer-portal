@@ -35,7 +35,7 @@ const Login = () => {
     setLoading(true);
     try {
       const userData = await login(formData.email, formData.password);
-      navigate(userData.role === 'company' ? '/internal/dashboard' : '/customer/dashboard');
+      navigate(['owner','technician','sales','staff','company'].includes(userData.role) ? '/internal/dashboard' : '/customer/dashboard');
     } catch (err) {
       setError(err.message || 'Invalid email or password');
     } finally {

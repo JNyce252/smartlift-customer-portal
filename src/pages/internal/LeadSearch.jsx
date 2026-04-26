@@ -5,6 +5,7 @@ import { Search, Building2, MapPin, AlertCircle, Plus, CheckCircle, Star, Phone,
 import { exportProspectsCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const PLACES_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
@@ -79,7 +80,7 @@ const LeadSearch = () => {
   const activeFilters = [urgencyFilter !== 'all', cityFilter !== 'all', minScore > 0, statusFilter !== 'all'].filter(Boolean).length;
 
   const archiveProspect = async (id) => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     await fetch(`${BASE_URL}/prospects/${id}/archive`, {
       method: 'PATCH', headers,
@@ -185,7 +186,7 @@ const LeadSearch = () => {
       // Corporate Office Tower: run Claude qualifier to remove single-tenant offices
       if (selectedType.requiresQualifier) {
         try {
-          const token = localStorage.getItem('smartlift_token');
+          const token = authService.getIdToken();
           const qRes = await fetch(`${BASE_URL}/lead-search/qualify-office-results`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
@@ -229,7 +230,7 @@ const LeadSearch = () => {
       const stateName = location.split(',')[1]?.trim() || 'TX';
 
       try {
-        const token = localStorage.getItem('smartlift_token');
+        const token = authService.getIdToken();
         const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
         const aiRes = await fetch(`${BASE_URL}/ai/score-results`, {
           method: 'POST', headers,
@@ -295,7 +296,7 @@ const LeadSearch = () => {
       setImported(prev => ({ ...prev, [place.google_place_id]: true }));
       // Trigger review analysis in background - fire and forget
       if (newProspect && newProspect.id && place.google_place_id) {
-        const token = localStorage.getItem('smartlift_token');
+        const token = authService.getIdToken();
         fetch(`${BASE_URL}/prospects/${newProspect.id}/analyze-reviews`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },

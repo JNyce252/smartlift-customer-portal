@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Building2, MapPin, Phone, Star, Brain, TrendingUp, Wrench, Clock, AlertTriangle, CheckCircle, Calendar, Layers, ChevronDown, ChevronUp, Mail, User, Search, Plus, ExternalLink, FileText, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { generateProposalPDF } from '../../utils/pdfGenerator';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 const GOOGLE_CSE_KEY = 'AIzaSyAeyv6UlP9Pw6k9nXRE3KDAge6EE4dbygg';
@@ -69,7 +70,7 @@ const ProspectDetails = () => {
   }, [id]);
 
   useEffect(() => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     Promise.all([
       fetch(`${BASE_URL}/prospects/${id}`, { headers }).then(r => r.json()),
@@ -113,7 +114,7 @@ const ProspectDetails = () => {
       const autoSearch = async () => {
         setHunterLoading(true);
         try {
-          const token = localStorage.getItem('smartlift_token');
+          const token = authService.getIdToken();
           const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/hunter?domain=${encodeURIComponent(domain)}`, {
             headers: { ...(token && { Authorization: `Bearer ${token}` }) }
           });
@@ -142,7 +143,7 @@ const ProspectDetails = () => {
       setAutoSearched(true);
       const pdlAutoSearch = async () => {
         try {
-          const token = localStorage.getItem('smartlift_token');
+          const token = authService.getIdToken();
           const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/people-search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
@@ -161,7 +162,7 @@ const ProspectDetails = () => {
     setHunterLoading(true);
     setHunterError(null);
     try {
-      const token2 = localStorage.getItem('smartlift_token');
+      const token2 = authService.getIdToken();
       // TODO: This heuristic ("contains dot = domain") has edge cases — e.g.,
       // company names with "Co." abbreviation. Acceptable for demo; replace with
       // explicit input type toggle post-demo.
@@ -175,7 +176,7 @@ const ProspectDetails = () => {
       const data = await res.json();
       if (data.errors) { setHunterError(data.errors[0]?.details || 'Hunter.io error'); return; }
 
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
 
       const newContacts = [];
@@ -214,7 +215,7 @@ const ProspectDetails = () => {
     if (!newNote.trim()) return;
     setNotesSaving(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const res = await fetch(`${BASE_URL}/prospects/${id}/notes`, {
         method: 'POST', headers,
@@ -232,7 +233,7 @@ const ProspectDetails = () => {
 
   const saveEdit = async (noteId) => {
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const res = await fetch(`${BASE_URL}/prospects/${id}/notes/${noteId}`, {
         method: 'PATCH', headers,
@@ -248,7 +249,7 @@ const ProspectDetails = () => {
 
   const deleteNote = async (noteId) => {
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/prospects/${id}/notes/${noteId}`, { method: 'DELETE', headers });
       setNotes(prev => prev.filter(n => n.id !== noteId));
@@ -261,7 +262,7 @@ const ProspectDetails = () => {
   const updateStatus = async (newStatus) => {
     setStatusUpdating(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/prospects/${id}/status`, {
         method: 'PATCH', headers,
@@ -278,7 +279,7 @@ const ProspectDetails = () => {
   const submitSchedule = async () => {
     setScheduleLoading(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/tickets`, {
         method: 'POST', headers,
@@ -318,7 +319,7 @@ const ProspectDetails = () => {
   const saveContract = async () => {
     setSavingContract(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const annual = contractForm.annual_value || (contractForm.monthly_value ? contractForm.monthly_value * 12 : 0);
       const monthly = contractForm.monthly_value || (contractForm.annual_value ? contractForm.annual_value / 12 : 0);
@@ -348,7 +349,7 @@ const ProspectDetails = () => {
     setLinkedinError(null);
     setLinkedinResults([]);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/people-search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
@@ -370,7 +371,7 @@ const ProspectDetails = () => {
   const enrichCompany = async () => {
     setEnrichingCompany(true);
     try {
-      const ecToken = localStorage.getItem('smartlift_token');
+      const ecToken = authService.getIdToken();
       const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-company`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(ecToken && { Authorization: `Bearer ${ecToken}` }) },
@@ -384,7 +385,7 @@ const ProspectDetails = () => {
   };
 
   const enrichPerson = async (linkedinUrl, email, resultIndex) => {
-    const epToken = localStorage.getItem('smartlift_token');
+    const epToken = authService.getIdToken();
     try {
       const res = await fetch(`${BASE_URL}/prospects/${prospect.id}/enrich-person`, {
         method: 'POST',
@@ -417,7 +418,7 @@ const ProspectDetails = () => {
     if (!newContact.email && !newContact.first_name) return;
     setSavingContact(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const r = await fetch(`${BASE_URL}/prospects/${id}/contacts`, {
         method: 'POST', headers,
@@ -432,7 +433,7 @@ const ProspectDetails = () => {
   };
 
   const setPrimaryContact = async (contactId) => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
     // Clear all primary first, then set new one
     await Promise.all(contacts.map(c =>
@@ -446,7 +447,7 @@ const ProspectDetails = () => {
 
   const deleteContact = async (contactId) => {
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/prospects/${id}/contacts/${contactId}`, { method: 'DELETE', headers });
       setContacts(prev => prev.filter(c => c.id !== contactId));
@@ -457,7 +458,7 @@ const ProspectDetails = () => {
     setIntroLoading(true);
     setShowIntro(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const res = await fetch(`${BASE_URL}/prospects/${id}/intro-email`, { method: 'POST', headers });
       const data = await res.json();
@@ -527,7 +528,7 @@ const ProspectDetails = () => {
     if (!uploadedProposal.trim()) return;
     setImprovingProposal(true);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       const res = await fetch(`${BASE_URL}/prospects/${id}/improve-proposal`, {
         method: 'POST', headers,
@@ -549,7 +550,7 @@ const ProspectDetails = () => {
     setProposalLoading(true);
     setProposal(null);
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       
       // Fire generation request — may timeout but Lambda keeps running
@@ -732,7 +733,7 @@ const ProspectDetails = () => {
                 <button onClick={async () => {
                   setProposalLoading(true);
                   try {
-                    const h = { "Content-Type": "application/json", Authorization: "Bearer " + localStorage.getItem("smartlift_token") };
+                    const h = { "Content-Type": "application/json", Authorization: "Bearer " + authService.getIdToken() };
                     const BASE = process.env.REACT_APP_API_BASE_URL || "https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod";
                     await fetch(BASE + "/prospects/" + id + "/score", { method: "POST", headers: h, body: JSON.stringify({ prospect_id: id }) });
                     setTimeout(() => window.location.reload(), 4000);

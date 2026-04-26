@@ -1,0 +1,33 @@
+{
+  "_note": "ALL 6 user Lambdas share this single role. Pulled 2026-04-26.",
+  "RoleArn": "arn:aws:iam::416142471465:role/service-role/smartlift-api-role-zg1jcbas",
+  "TrustPolicy": {"Service": "lambda.amazonaws.com"},
+  "AttachedManagedPolicies": [
+    "AWSLambdaBasicExecutionRole-10af7d04 (custom)",
+    "AWSLambdaVPCAccessExecutionRole-47e0f2b3 (custom)",
+    "AWSLambdaVPCAccessExecutionRole (AWS-managed)",
+    "AWSLambdaRole (AWS-managed: lambda:InvokeFunction *)",
+    "AmazonBedrockFullAccess (AWS-managed) — OVERPROVISIONED, only need bedrock:InvokeModel"
+  ],
+  "InlinePolicies": {
+    "Bedrock-InvokeModel": {"Action": "bedrock:InvokeModel", "Resource": "*"},
+    "bedrock-marketplace": "(not yet pulled)",
+    "BedrockInvokePolicy": "(duplicate of Bedrock-InvokeModel — sloppy)",
+    "cognito-user-management": {
+      "Resource": "arn:aws:cognito-idp:us-east-1:416142471465:userpool/us-east-1_n7bsroYdL",
+      "Actions": ["ListUsers","AdminGetUser","AdminCreateUser","AdminSetUserPassword","AdminAddUserToGroup","AdminRemoveUserFromGroup","AdminListGroupsForUser","AdminDisableUser","AdminEnableUser","AdminUpdateUserAttributes"]
+    },
+    "invoke-ai-scorer": {
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:us-east-1:416142471465:function:smartlift-ai-scorer"
+    },
+    "ses-send-email": "(not yet pulled — likely duplicate)",
+    "SES-SendEmail": {"Action": ["ses:SendEmail","ses:SendRawEmail"], "Resource": "*"}
+  },
+  "_FINDINGS": {
+    "SHARED_ROLE": "All 6 Lambdas (including golden-signature-contact, just a contact form) share one role. Blast radius: any RCE in any Lambda = Bedrock + DB + Cognito admin + SES + cross-Lambda invoke + VPC.",
+    "DUPLICATE_POLICIES": "Two Bedrock invoke policies, two SES send policies, two VPC-access policies (one custom, one managed) — needs cleanup.",
+    "BEDROCK_FULL_ACCESS": "AmazonBedrockFullAccess includes model creation, deletion, etc. Should be just bedrock:InvokeModel on specific model ARNs.",
+    "BROAD_AWSLAMBDAROLE": "AWSLambdaRole grants lambda:InvokeFunction on * — scope to specific ARNs."
+  }
+}

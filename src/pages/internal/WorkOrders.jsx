@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { generateWorkOrderPDF } from '../../utils/pdfGenerator';
 import { exportWorkOrdersCSV } from '../../utils/csvExport';
+import { authService } from '../../services/authService';
 // already imported from '../../utils/pdfGenerator';
 import { Building2, Wrench, Plus, X, Clock, CheckCircle, AlertTriangle, Search, Filter, ChevronDown, User, Calendar, Tool , Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -58,7 +59,7 @@ const WorkOrders = () => {
 
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   const fetchData = async () => {

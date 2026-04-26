@@ -1,0 +1,16 @@
+{
+  "_note": "DB security group attached to Aurora cluster AND to smartlift-ai-scorer's VPC config. CRITICAL FINDING.",
+  "GroupId": "sg-0a10102c1e09c540e",
+  "GroupName": "default",
+  "VpcId": "vpc-06cec9c7bd56c515d",
+  "InboundRules": [
+    {"port": 80, "from": "0.0.0.0/0", "description": null},
+    {"port": 5432, "from": "0.0.0.0/0", "description": "Temp Cloudshell access"},
+    {"port": "ALL", "from": "self (sg-0a10102c1e09c540e)", "description": "intra-SG traffic"},
+    {"port": 22, "from": "52.95.4.19/32", "description": null}
+  ],
+  "OutboundRules": [{"port": "ALL", "to": "0.0.0.0/0"}],
+  "_CRITICAL_FINDING": "Postgres port 5432 is open to the entire internet. Combined with master credentials in env vars and code, this is the highest-priority security issue. Lock down to specific Lambda egress IPs (or move Lambda back into VPC) immediately.",
+  "_PORT_80_FINDING": "Why is port 80 open to the world on the DB SG? No HTTP service should be running here.",
+  "_PORT_22_FINDING": "Single static IP for SSH (52.95.4.19) — that's an AWS IP range. If this is for SSM Session Manager or CloudShell, prefer a VPC endpoint over a fixed IP."
+}

@@ -2,8 +2,9 @@ import { authService } from './authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
+// Use the ID token — it carries cognito:groups + email which the Lambda decodes.
 const getHeaders = () => {
-  const token = authService.getToken();
+  const token = authService.getIdToken();
   return {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` })

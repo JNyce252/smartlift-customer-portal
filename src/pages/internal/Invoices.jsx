@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Building2, DollarSign, Plus, X, CheckCircle, Clock, AlertTriangle, Search, FileText, Send, Download } from 'lucide-react';
 import { generateInvoicePDF } from '../../utils/pdfGenerator';
 import { exportInvoicesCSV } from '../../utils/csvExport';
+import { authService } from '../../services/authService';
 // already from '../../utils/pdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 
@@ -37,7 +38,7 @@ const Invoices = () => {
 
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   const fetchData = async () => {

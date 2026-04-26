@@ -1,0 +1,27 @@
+{
+  "_note": "Pulled 2026-04-26",
+  "DBClusterIdentifier": "hotel-leads-aurora",
+  "Engine": "aurora-postgresql 16.8",
+  "EngineMode": "provisioned",
+  "ServerlessV2": "0.5–16 ACU",
+  "Endpoint": "hotel-leads-aurora.cluster-cgnwaccyi4a8.us-east-1.rds.amazonaws.com",
+  "ReaderEndpoint": "hotel-leads-aurora.cluster-ro-cgnwaccyi4a8.us-east-1.rds.amazonaws.com",
+  "Port": 5432,
+  "MasterUsername": "hotelapp",
+  "DatabaseName": "hotelleads",
+  "VpcSecurityGroup": "sg-0a10102c1e09c540e",
+  "Subnet": "default-vpc-06cec9c7bd56c515d",
+  "MultiAZ": false,
+  "DeletionProtection": false,
+  "StorageEncrypted": true,
+  "BackupRetentionPeriod": 7,
+  "IAMDatabaseAuthenticationEnabled": false,
+  "PerformanceInsightsEnabled": false,
+  "EnabledCloudwatchLogsExports": ["iam-db-auth-error","instance","postgresql"],
+  "_FINDINGS": {
+    "DELETION_PROTECTION_OFF": "Production DB has DeletionProtection=false — a typo in the console can wipe the cluster.",
+    "MULTI_AZ_OFF": "Single-AZ. Outage in us-east-1a/c/d = downtime. Aurora replicas should fix this for SLA.",
+    "NO_IAM_AUTH": "Password-only auth. With the SG wide open, this is the only thing standing between the internet and the DB.",
+    "NO_PERFORMANCE_INSIGHTS": "Hard to debug slow queries / detect anomalous activity."
+  }
+}

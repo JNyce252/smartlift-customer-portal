@@ -1,0 +1,7 @@
+{
+  "_note": "API Gateway aup3wz6azh = GoldenSignature-API (separate stack — backs UserMenu support form). Pulled 2026-04-26.",
+  "RestApiId": "aup3wz6azh",
+  "Authorizers": [],
+  "Routes": ["POST /contact (golden-signature-contact Lambda)"],
+  "_FINDING": "Also has no authorizers. Anyone can POST to /contact. The Lambda needs basic abuse protection (rate limiting, captcha, or origin check) since it likely sends email via SES."
+}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUserPreferences } from '../../hooks/useUserPreferences';
+import { authService } from '../../services/authService';
 import {
   DollarSign, TrendingUp, AlertTriangle, ClipboardList,
   ArrowRight, Shield, Users, Zap, ChevronUp, ChevronDown,
@@ -45,7 +46,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
 
   const authData = localStorage.getItem('smartlift_auth');
-  const token = authData ? JSON.parse(authData)?.token : localStorage.getItem('smartlift_token');
+  const token = authData ? JSON.parse(authData)?.token : authService.getIdToken();
   const headers = { Authorization: `Bearer ${token}` };
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpDown, LogOut, AlertCircle, DollarSign, CheckCircle, Clock, FileText, Download, ChevronRight, CreditCard, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -20,7 +21,7 @@ const BillingPayments = () => {
   const [expandedId, setExpandedId] = useState(null);
 
   const headers = {
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   useEffect(() => {

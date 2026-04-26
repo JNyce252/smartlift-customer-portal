@@ -1,0 +1,29 @@
+{
+  "_note": "Main Cognito pool — used by smarterlift.app frontend. Pulled 2026-04-26.",
+  "Id": "us-east-1_n7bsroYdL",
+  "Name": "amplifyAuthUserPool4BA7F805-S4tc2SGq87I0",
+  "Tags": {"amplify:deployment-type": "sandbox", "amplify:friendly-name": "amplifyAuth"},
+  "DeletionProtection": "INACTIVE",
+  "MfaConfiguration": "OFF",
+  "PasswordPolicy": {"MinLength": 8, "RequireUpper": true, "RequireLower": true, "RequireDigit": true, "RequireSymbol": true},
+  "UsernameAttributes": ["email"],
+  "AutoVerifiedAttributes": ["email"],
+  "EstimatedNumberOfUsers": 5,
+  "LambdaConfig": "{} — no triggers (no pre-token-generation, no pre-signup)",
+  "Groups": [
+    {"name": "Owners", "precedence": 10},
+    {"name": "Technicians", "precedence": 11},
+    {"name": "SalesOffice", "precedence": 12},
+    {"name": "CompanyUsers", "precedence": 1},
+    {"name": "Customers", "precedence": 2}
+  ],
+  "AppClients": [{"ClientId": "1hujibm6rksvr9a1d0p8a7ukfp"}],
+  "CustomAttributes": "(none — no custom:company_id)",
+  "_FINDINGS": {
+    "SANDBOX_DEPLOYMENT": "Pool is tagged amplify:deployment-type=sandbox. Production users live in a sandbox pool — these are typically less protected and can be torn down by an `amplify sandbox delete`. Move to a non-sandbox pool before scaling.",
+    "DELETION_PROTECTION_OFF": "DeletionProtection=INACTIVE — pool can be deleted. Five real users would lose access.",
+    "NO_MFA": "MFA off. For an Owner role with full DB-mutating power, MFA should be required.",
+    "NO_PRE_TOKEN_TRIGGER": "Without a pre-token-generation Lambda trigger, the JWT cannot carry a custom:company_id claim. The Lambda's getCompanyId() must therefore look up by email/sub OR hardcode — confirm by reading the Lambda.",
+    "GROUP_PRECEDENCE_INVERSION": "CompanyUsers has precedence=1 (highest), Owners=10. In Cognito, lower number wins. If a user is in both Owners and CompanyUsers, they'll be treated as 'staff' (CompanyUsers) instead of 'owner'. Could be deliberate or a bug — verify against the role decoder in AuthContext.jsx."
+  }
+}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X, CheckCheck, Wrench, AlertCircle, Calendar, FileText, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -33,7 +34,7 @@ const NotificationBell = () => {
 
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   const fetchNotifications = async () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Users, Plus, Mail, Shield, Wrench, BarChart2, UserCheck, UserX, ChevronDown, X, CheckCircle, Clock, AlertCircle, Star, Edit2, Send } from 'lucide-react';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -34,7 +35,7 @@ const TeamManagement = () => {
   const [saving, setSaving] = useState(false);
   const [editTech, setEditTech] = useState(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (getToken() || localStorage.getItem('smartlift_token')) };
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (getToken() || authService.getIdToken()) };
 
   const fetchData = async () => {
     setLoading(true);

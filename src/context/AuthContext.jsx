@@ -37,10 +37,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const currentUser = await authService.getCurrentUser();
       if (currentUser) {
-        // Re-fetch role on every page refresh — token may have new groups
+        // Re-fetch profile on every page refresh — preferences/displayName may change.
+        // Always send the idToken (carries cognito:groups + email — used by the
+        // Lambda's getCompanyId/getUserRole). The access token does not.
         const profile = await fetch(
           process.env.REACT_APP_API_BASE_URL + '/me',
-          { headers: { Authorization: 'Bearer ' + currentUser.token } }
+          { headers: { Authorization: 'Bearer ' + (currentUser.idToken || currentUser.token) } }
         ).then(r => r.ok ? r.json() : null).catch(() => null);
         // Decode role directly from stored idToken
         const roleFromToken = getRoleFromToken(currentUser.idToken || currentUser.token);
@@ -61,11 +63,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const fetchUserProfile = async (token) => {
+  const fetchUserProfile = async (idToken) => {
     try {
       const res = await fetch(
         process.env.REACT_APP_API_BASE_URL + '/me',
-        { headers: { Authorization: 'Bearer ' + token } }
+        { headers: { Authorization: 'Bearer ' + idToken } }
       );
       if (res.ok) {
         const profile = await res.json();
@@ -85,8 +87,8 @@ export const AuthProvider = ({ children }) => {
       // Fetch role and preferences from /me
       // Decode role directly from idToken — fast and reliable
       const roleFromToken = getRoleFromToken(userData.idToken || userData.token);
-      // Also fetch preferences from /me in background
-      const profile = await fetchUserProfile(userData.token, userData.idToken);
+      // Also fetch preferences from /me — send ID token so Lambda can decode groups/email.
+      const profile = await fetchUserProfile(userData.idToken || userData.token);
       const enriched = {
         ...userData,
         role: roleFromToken,
@@ -129,13 +131,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const getToken = () => authService.getToken();
-  // getIdToken returns the ID token which contains cognito:groups for role detection
-  const getIdToken = () => {
-    try {
-      const userStr = localStorage.getItem('smartlift_user');
-      return JSON.parse(userStr)?.idToken || authService.getToken();
-    } catch { return authService.getToken(); }
-  };
+  // getIdToken returns the ID token which contains cognito:groups for role detection.
+  // Single source of truth lives in authService — do not re-read localStorage here.
+  const getIdToken = () => authService.getIdToken();
 
   const value = {
     user, loading, error, login, register, logout, getToken, getIdToken,

@@ -2,6 +2,7 @@ import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Building2, AlertTriangle, Clock, CheckCircle, Plus, Search, Filter, MapPin, Calendar, Zap, TrendingUp, ChevronRight, RefreshCw, Mail, X, Shield } from 'lucide-react';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -46,7 +47,7 @@ const TDLRIntelligence = () => {
 
   const headers = {
     'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + localStorage.getItem('smartlift_token')
+    Authorization: 'Bearer ' + authService.getIdToken()
   };
 
   const fetchRecords = useCallback(async (resetPage = false) => {

@@ -1,0 +1,2241 @@
+import pg from 'pg';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand,
+  AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand,
+  AdminDisableUserCommand, AdminEnableUserCommand, AdminSetUserPasswordCommand } from '@aws-sdk/client-cognito-identity-provider';
+
+const cognitoClient = new CognitoIdentityProviderClient({ region: 'us-east-1' });
+const USER_POOL_ID = 'us-east-1_n7bsroYdL';
+const ROLE_GROUPS = ['Owners', 'Technicians', 'SalesOffice'];
+const REGISTRY_STATES = ['TX']; // expand here when CA, FL, NYC data is loaded
+
+const { Pool } = pg;
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  ssl: { rejectUnauthorized: false }
+});
+
+// CORS — only echo allowlisted origins. Wildcard '*' is unsafe combined with Authorization.
+// Add new frontend origins here when needed (Amplify preview branches, custom domains, etc.).
+const ALLOWED_ORIGINS = new Set([
+  'https://smarterlift.app',
+  'https://www.smarterlift.app',
+  'http://localhost:3000',
+]);
+
+const buildCorsHeaders = (event) => {
+  const origin = event?.headers?.origin || event?.headers?.Origin || '';
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : 'https://smarterlift.app';
+  return {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'Vary': 'Origin',
+  };
+};
+
+// Default response builder (used by handlers that don't currently thread `event`).
+// Sends the canonical production origin — for stricter origin echoing, switch the
+// handler to use `respondTo(event, status, body)` instead.
+const respond = (status, body) => ({
+  statusCode: status,
+  headers: {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': 'https://smarterlift.app',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'Vary': 'Origin',
+  },
+  body: JSON.stringify(body),
+});
+
+const respondTo = (event, status, body) => ({
+  statusCode: status,
+  headers: buildCorsHeaders(event),
+  body: JSON.stringify(body),
+});
+
+// Generic 500 — never leak Postgres / SDK error details to the client.
+const internalError = (event, err) => {
+  const requestId = event?.requestContext?.requestId || '';
+  console.error('[ERROR]', requestId, err?.stack || err?.message || err);
+  return {
+    statusCode: 500,
+    headers: buildCorsHeaders(event),
+    body: JSON.stringify({ error: 'Internal server error', request_id: requestId }),
+  };
+};
+
+// Sentinel thrown by getCompanyId() when auth is missing/invalid. Caught by the
+// handler and converted to a 401. Replaces the previous "fail open to company_id=1"
+// behaviour, which silently exposed Southwest Cabs data to anonymous callers.
+class AuthError extends Error {
+  constructor(reason) { super(reason); this.name = 'AuthError'; this.reason = reason; }
+}
+
+// Decode the JWT bearer token. Returns the decoded payload or {} on parse failure.
+const decodeJWT = (event) => {
+  try {
+    const auth = event.headers?.Authorization || event.headers?.authorization;
+    if (!auth) return {};
+    const token = auth.replace('Bearer ', '');
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+  } catch { return {}; }
+};
+
+const getUserRole = (event) => {
+  try {
+    const payload = decodeJWT(event);
+    const groups = payload['cognito:groups'] || [];
+    const g = Array.isArray(groups) ? groups : String(groups).split(',').map(s => s.trim());
+    if (g.includes('Owners')) return 'owner';
+    if (g.includes('Technicians')) return 'technician';
+    if (g.includes('SalesOffice')) return 'sales';
+    if (g.includes('CompanyUsers')) return 'staff';
+    if (g.includes('Customers')) return 'customer';
+    return 'staff';
+  } catch { return 'staff'; }
+};
+
+const getUserSub = (event) => {
+  try {
+    const payload = decodeJWT(event);
+    return payload.sub || null;
+  } catch { return null; }
+};
+
+// Fail-CLOSED tenant resolution. Throws AuthError on any failure path; the handler
+// catches it and returns 401 instead of falling through to company_id=1 data.
+//
+// Looks the caller up in TWO places:
+//   1. company_users  — internal users (Owners / Sales / Technicians / Staff), email-keyed
+//   2. customers      — customer-portal users, cognito_user_id-keyed (the JWT `sub`)
+// Whichever matches first wins. Throws AuthError if neither matches.
+//
+// Returns { companyId, customerId? } — customerId is set only when the caller is a
+// portal customer, so route handlers that should be customer-scoped (e.g. /elevators
+// when called by a Customer-role user) can additionally filter by customer_id.
+const getAuthContext = async (event, pool) => {
+  const auth = event.headers?.Authorization || event.headers?.authorization;
+  if (!auth) throw new AuthError('missing_authorization_header');
+  const token = auth.replace('Bearer ', '');
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+  } catch {
+    throw new AuthError('malformed_token');
+  }
+  const email = payload.email || payload['cognito:username'] || null;
+  const sub = payload.sub || null;
+  if (!email && !sub) throw new AuthError('token_missing_identity_claims');
+
+  // 1. Internal user — email lookup in company_users
+  if (email) {
+    const r = await pool.query(
+      'SELECT company_id FROM company_users WHERE email = $1 AND status = $2 LIMIT 1',
+      [email, 'active']
+    );
+    if (r.rows.length && r.rows[0].company_id != null) {
+      return { companyId: r.rows[0].company_id, customerId: null, role: 'internal' };
+    }
+  }
+
+  // 2. Portal customer — Cognito sub lookup in customers.cognito_user_id
+  if (sub) {
+    const r = await pool.query(
+      "SELECT id, company_id FROM customers WHERE cognito_user_id = $1 AND COALESCE(account_status,'active') = 'active' AND archived = FALSE LIMIT 1",
+      [sub]
+    );
+    if (r.rows.length && r.rows[0].company_id != null) {
+      return { companyId: r.rows[0].company_id, customerId: r.rows[0].id, role: 'customer' };
+    }
+  }
+
+  throw new AuthError('user_not_provisioned');
+};
+
+// Backward-compat shim — most existing route handlers expect a bare `companyId`.
+// New / refactored handlers should call getAuthContext() directly to also get
+// the customerId (for customer-scoped filtering).
+const getCompanyId = async (event, pool) => (await getAuthContext(event, pool)).companyId;
+
+// Convenience: a "/health" caller doesn't need a company. Keep this whitelist tight.
+const PUBLIC_PATHS = new Set(['/health', '/']);
+
+// Log activity (non-fatal — failures here must never block a successful request)
+const logActivity = async (pool, companyId, userEmail, action, resourceType, resourceId, metadata) => {
+  try {
+    await pool.query(
+      'INSERT INTO activity_log (company_id, user_email, action, resource_type, resource_id, metadata) VALUES ($1,$2,$3,$4,$5,$6)',
+      [companyId, userEmail, action, resourceType, resourceId, metadata ? JSON.stringify(metadata) : null]
+    );
+  } catch(e) { /* non-fatal */ }
+};
+
+export const handler = async (event) => {
+  const method = event.httpMethod;
+  // Handle both REST API (event.path) and HTTP API (event.rawPath) formats.
+  // REST API includes the stage prefix (e.g. /prod/me) — strip exactly /prod/ or /staging/
+  // so a route like /products is not corrupted into /ucts.
+  const rawPath = event.rawPath || event.path || '';
+  const path = rawPath.replace(/^\/(prod|staging)(?=\/|$)/, '') || '/';
+  if (method === 'OPTIONS') return respondTo(event, 200, {});
+
+  // /health — public, no tenant. Keeps observability simple.
+  if (method === 'GET' && PUBLIC_PATHS.has(path)) {
+    try {
+      const r = await pool.query('SELECT NOW() as now');
+      return respondTo(event, 200, { status: 'ok', time: r.rows[0].now });
+    } catch (e) { return internalError(event, e); }
+  }
+
+  let companyId;
+  try {
+    companyId = await getCompanyId(event, pool);
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return respondTo(event, 401, { error: 'Unauthorized', reason: e.reason });
+    }
+    return internalError(event, e);
+  }
+
+  try {
+
+    // /health is handled above (PUBLIC_PATHS) — no duplicate route here.
+
+    if (method === 'GET' && path === '/prospects') {
+      const result = await pool.query(`
+        SELECT p.*, ei.ai_summary, ei.service_urgency, ei.estimated_elevators, ei.modernization_candidate
+        FROM prospects p
+        LEFT JOIN elevator_intelligence ei ON ei.prospect_id = p.id
+        WHERE p.archived = FALSE AND p.company_id = $1
+        ORDER BY p.created_at DESC
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/prospects') {
+      const body = JSON.parse(event.body || '{}');
+      const { name, google_place_id, address, city, state, phone, website, rating, total_reviews, type, lat, lng, lead_score } = body;
+      if (!name) return respond(400, { error: 'name is required' });
+      if (google_place_id) {
+        const existing = await pool.query('SELECT id FROM prospects WHERE google_place_id = $1 AND company_id = $2', [google_place_id, companyId]);
+        if (existing.rows.length > 0) return respond(409, { error: 'Prospect already exists', id: existing.rows[0].id });
+      }
+      const result = await pool.query(`
+        INSERT INTO prospects (name, google_place_id, address, city, state, phone, website, rating, total_reviews, type, latitude, longitude, status, lead_score, archived, company_id, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'new',
+          COALESCE($13, CASE WHEN $8 >= 4.5 THEN 85 WHEN $8 >= 4.0 THEN 75 WHEN $8 >= 3.5 THEN 60 ELSE 50 END),
+          FALSE, $14, NOW(), NOW()) RETURNING *
+      `, [name, google_place_id||null, address, city||'Unknown', state||'TX', phone||null, website||null, rating||null, total_reviews||0, type||'hotel', lat||null, lng||null, lead_score||null, companyId]);
+      const newProspect = result.rows[0];
+      try {
+        const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+        const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+        // Run scoring and review analysis in parallel
+        // Fetch company profile for dynamic prompt
+        const profileForScoring = await pool.query('SELECT company_name, bio, certifications, credentials, service_area, years_in_business FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+        const prof = profileForScoring.rows[0] || {};
+        const companyName = prof.company_name || 'Southwest Cabs Elevator Services';
+        const companyBio = prof.bio || 'Texas elevator maintenance and repair specialists';
+        const companyCreds = [prof.certifications, prof.credentials].filter(Boolean).join('. ') || 'Licensed Texas elevator contractor';
+        const serviceArea = prof.service_area || 'Texas';
+        const yearsInBusiness = prof.years_in_business || '20+';
+
+        const prompt = `You are an expert elevator service sales consultant helping ${companyName} evaluate a prospect. Analyze this building and return ONLY valid JSON with no markdown fences.
+
+COMPANY: ${companyName} | ${companyBio} | ${yearsInBusiness} years in business | ${companyCreds} | Service area: ${serviceArea}
+
+BUILDING: ${newProspect.name} | TYPE: ${newProspect.type} | CITY: ${newProspect.city}, TX | RATING: ${newProspect.rating}/5 | REVIEWS: ${newProspect.total_reviews} | ADDRESS: ${newProspect.address || 'TX'}
+
+Write ai_summary as 4 full sentences: (1) what this building is and its scale, (2) how intensively elevators are used based on type and review volume, (3) what the rating reveals about management quality, (4) the primary elevator service opportunity and overall prospect strength.
+Write ai_recommendation as 3 full sentences: (1) exact decision maker title to call and why, (2) specific service to lead with and exact pain point to address for ${companyName} specifically, (3) strongest value proposition and how to handle the most likely objection.
+
+Return this JSON only: {"sentiment_score":<0-10>,"service_urgency":"<high|medium|low>","estimated_floors":<number>,"estimated_elevators":<number>,"building_age":<years>,"modernization_candidate":<true|false>,"reputation_score":<0-10>,"common_issues":["<specific issue 1>","<specific issue 2>","<specific issue 3>"],"ai_summary":"<4 sentences>","ai_recommendation":"<3 sentences>","lead_score":<0-100>}`;
+        const resp = await bedrock.send(new InvokeModelCommand({
+          modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+          contentType: 'application/json', accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] })
+        }));
+        const aiText = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+        let ai;
+        try {
+          ai = JSON.parse(aiText.replace(/```json|```/g, '').trim());
+        } catch(parseErr) {
+          const extract = (field) => { const match = aiText.match(new RegExp('"' + field + '"\\s*:\\s*"([^"]*(?:\\\\"[^"]*)*)"')); return match ? match[1] : null; };
+          const extractNum = (field) => { const match = aiText.match(new RegExp('"' + field + '"\\s*:\\s*(\\d+(?:\\.\\d+)?)')); return match ? parseFloat(match[1]) : null; };
+          ai = { sentiment_score: extractNum('sentiment_score')||7, service_urgency: extract('service_urgency')||'medium', estimated_floors: extractNum('estimated_floors')||10, estimated_elevators: extractNum('estimated_elevators')||4, building_age: extractNum('building_age')||20, modernization_candidate: aiText.includes('"modernization_candidate": true')||aiText.includes('"modernization_candidate":true'), reputation_score: extractNum('reputation_score')||7, common_issues: ['Regular maintenance required','Aging components','High usage wear'], ai_summary: extract('ai_summary')||'This building represents a strong elevator service opportunity.', ai_recommendation: extract('ai_recommendation')||'Contact the Facilities Manager to discuss a maintenance contract.', lead_score: extractNum('lead_score')||75 };
+        }
+        await pool.query(`
+          INSERT INTO elevator_intelligence (prospect_id, company_id, sentiment_score, service_urgency, estimated_floors, estimated_elevators, building_age, modernization_candidate, reputation_score, common_issues, ai_summary, ai_recommendation, analysis_date, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+          ON CONFLICT (prospect_id) DO UPDATE SET sentiment_score=EXCLUDED.sentiment_score, service_urgency=EXCLUDED.service_urgency, estimated_floors=EXCLUDED.estimated_floors, estimated_elevators=EXCLUDED.estimated_elevators, building_age=EXCLUDED.building_age, modernization_candidate=EXCLUDED.modernization_candidate, reputation_score=EXCLUDED.reputation_score, common_issues=EXCLUDED.common_issues, ai_summary=EXCLUDED.ai_summary, ai_recommendation=EXCLUDED.ai_recommendation, updated_at=NOW()
+        `, [newProspect.id, companyId, ai.sentiment_score, ai.service_urgency, ai.estimated_floors, ai.estimated_elevators, ai.building_age, ai.modernization_candidate, ai.reputation_score, JSON.stringify(ai.common_issues), ai.ai_summary, ai.ai_recommendation]);
+        await pool.query('UPDATE prospects SET lead_score=$1 WHERE id=$2', [ai.lead_score, newProspect.id]);
+        newProspect.lead_score = ai.lead_score;
+        console.log('Scored:', newProspect.id, 'score:', ai.lead_score, 'company:', companyId);
+      } catch(e) { console.log('Scoring failed (non-fatal):', e.message); }
+      // Trigger review analysis asynchronously via separate Lambda invocation
+      if (newProspect.google_place_id && !newProspect.google_place_id.startsWith('test')) {
+        try {
+          const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+          const lambdaClient = new LambdaClient({ region: 'us-east-1' });
+          await lambdaClient.send(new InvokeCommand({
+            FunctionName: 'smartlift-review-analyzer',
+            InvocationType: 'Event',
+            Payload: JSON.stringify({ prospect_id: newProspect.id, place_id: newProspect.google_place_id })
+          }));
+          console.log('Review analysis triggered for prospect:', newProspect.id);
+        } catch(reviewErr) {
+          console.log('Review trigger failed (non-fatal):', reviewErr.message);
+        }
+      }
+
+      await logActivity(pool, companyId, null, 'prospect_created', 'prospect', newProspect.id, { name: newProspect.name });
+      return respond(201, newProspect);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/score$/)) {
+      const prospectId = path.split('/')[2];
+      const prospectResult = await pool.query('SELECT * FROM prospects WHERE id=$1 AND company_id=$2', [prospectId, companyId]);
+      if (!prospectResult.rows.length) return respond(404, { error: 'Prospect not found' });
+      const p = prospectResult.rows[0];
+      const intelResult = await pool.query('SELECT * FROM elevator_intelligence WHERE prospect_id=$1', [prospectId]);
+      const existing = intelResult.rows[0] || {};
+      const profileResult = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      const profile = profileResult.rows[0] || {};
+      const prompt = `You are an AI sales analyst for ${profile.company_name || 'an elevator service company'}.\nBuilding: ${p.name}\nAddress: ${p.address}, ${p.city}, ${p.state}\nWebsite: ${p.website || 'Unknown'}\nPhone: ${p.phone || 'Unknown'}\nFloors: ${existing.estimated_floors || 'Unknown'}\nBuilding Age: ${existing.building_age || 'Unknown'} years\nNotes: ${p.notes || 'None'}\nReturn ONLY this JSON: {"sentiment_score":<0-10>,"service_urgency":"<high|medium|low>","estimated_floors":<number>,"estimated_elevators":<number>,"building_age":<years>,"modernization_candidate":<true|false>,"reputation_score":<0-10>,"common_issues":["<issue1>","<issue2>","<issue3>"],"ai_summary":"<4 sentences>","ai_recommendation":"<3 sentences>","lead_score":<0-100>}`;
+      try {
+        const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+        const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+        const resp = await bedrock.send(new InvokeModelCommand({
+          modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+          contentType: 'application/json', accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+        }));
+        const aiText = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+        const ai = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        if (ai) {
+          await pool.query(`INSERT INTO elevator_intelligence (prospect_id, company_id, sentiment_score, service_urgency, estimated_floors, estimated_elevators, building_age, modernization_candidate, reputation_score, common_issues, ai_summary, ai_recommendation, analysis_date, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) ON CONFLICT (prospect_id) DO UPDATE SET sentiment_score=EXCLUDED.sentiment_score, service_urgency=EXCLUDED.service_urgency, estimated_floors=EXCLUDED.estimated_floors, estimated_elevators=EXCLUDED.estimated_elevators, building_age=EXCLUDED.building_age, modernization_candidate=EXCLUDED.modernization_candidate, reputation_score=EXCLUDED.reputation_score, common_issues=EXCLUDED.common_issues, ai_summary=EXCLUDED.ai_summary, ai_recommendation=EXCLUDED.ai_recommendation, analysis_date=NOW(), updated_at=NOW()`,
+            [prospectId, companyId, ai.sentiment_score, ai.service_urgency, ai.estimated_floors||existing.estimated_floors, ai.estimated_elevators||existing.estimated_elevators, ai.building_age||existing.building_age, ai.modernization_candidate, ai.reputation_score, JSON.stringify(ai.common_issues), ai.ai_summary, ai.ai_recommendation]);
+          await pool.query('UPDATE prospects SET lead_score=$1 WHERE id=$2', [ai.lead_score, prospectId]);
+          return respond(200, { success: true, lead_score: ai.lead_score });
+        }
+      } catch(e) { console.error('Score error:', e.message); }
+      return respond(500, { error: 'Scoring failed' });
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+$/) && !path.includes('/contacts') && !path.includes('/notes') && !path.includes('/proposal') && !path.includes('/contracts') && !path.includes('/hunter') && !path.includes('/tdlr') && !path.includes('/people-search') && !path.includes('/enrich')) {
+      const id = path.split('/')[2];
+      const result = await pool.query(`
+        SELECT p.*, ei.ai_summary, ei.ai_recommendation, ei.service_urgency, ei.sentiment_score,
+               ei.estimated_floors, ei.estimated_elevators, ei.building_age, ei.modernization_candidate,
+               ei.reputation_score, ei.common_issues, ei.analysis_date,
+               ei.review_intelligence, ei.elevator_complaints, ei.competitor_mentions, ei.maintenance_signals
+        FROM prospects p LEFT JOIN elevator_intelligence ei ON ei.prospect_id = p.id
+        WHERE p.id = $1 AND p.company_id = $2
+      `, [id, companyId]);
+      if (!result.rows.length) return respond(404, { error: 'Not found' });
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^\/prospects\/\d+\/status$/)) {
+      const id = path.split('/')[2];
+      const { status } = JSON.parse(event.body || '{}');
+      await pool.query('UPDATE prospects SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3', [status, id, companyId]);
+      if (status === 'won') {
+        const p = await pool.query('SELECT * FROM prospects WHERE id=$1 AND company_id=$2', [id, companyId]);
+        const prospect = p.rows[0];
+        if (prospect) {
+          const existing = await pool.query('SELECT id FROM customers WHERE prospect_id=$1 AND company_id=$2', [id, companyId]);
+          if (!existing.rows.length) {
+            await pool.query(`INSERT INTO customers (company_name, prospect_id, account_status, city, state, phone, website, archived, company_id, created_at, updated_at) VALUES ($1,$2,'active',$3,$4,$5,$6,FALSE,$7,NOW(),NOW())`,
+              [prospect.name, id, prospect.city, prospect.state, prospect.phone, prospect.website, companyId]);
+          }
+        }
+      }
+      return respond(200, { success: true });
+    }
+
+    if (method === 'PATCH' && path.match(/^\/prospects\/\d+\/archive$/)) {
+      const id = path.split('/')[2];
+      const { archived } = JSON.parse(event.body || '{}');
+      await pool.query('UPDATE prospects SET archived=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3', [archived, id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/contacts$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT * FROM prospect_contacts WHERE prospect_id=$1 AND company_id=$2 ORDER BY created_at ASC', [id, companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/contacts$/)) {
+      const id = path.split('/')[2];
+      const { first_name, last_name, email, title, linkedin_url, confidence, source, phone } = JSON.parse(event.body || '{}');
+      const result = await pool.query(
+        'INSERT INTO prospect_contacts (prospect_id, company_id, first_name, last_name, email, title, linkedin_url, confidence, source, phone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+        [id, companyId, first_name, last_name, email, title, linkedin_url, confidence, source||'manual', phone||null]
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^\/prospects\/\d+\/contacts\/\d+$/)) {
+      const contactId = path.split('/')[4];
+      const { is_primary } = JSON.parse(event.body || '{}');
+      if (is_primary) {
+        // Unset all other primary contacts for this prospect first
+        const prospectId = path.split('/')[2];
+        await pool.query('UPDATE prospect_contacts SET is_primary=FALSE WHERE prospect_id=$1 AND company_id=$2', [prospectId, companyId]);
+      }
+      await pool.query('UPDATE prospect_contacts SET is_primary=$1 WHERE id=$2 AND company_id=$3', [is_primary, contactId, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'DELETE' && path.match(/^\/prospects\/\d+\/contacts\/\d+$/)) {
+      const contactId = path.split('/')[4];
+      await pool.query('DELETE FROM prospect_contacts WHERE id=$1 AND company_id=$2', [contactId, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/notes$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT * FROM prospect_notes WHERE prospect_id=$1 AND company_id=$2 ORDER BY created_at DESC', [id, companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/notes$/)) {
+      const id = path.split('/')[2];
+      const { content } = JSON.parse(event.body || '{}');
+      const result = await pool.query('INSERT INTO prospect_notes (prospect_id, company_id, content, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING *', [id, companyId, content]);
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^\/prospects\/\d+\/notes\/\d+$/)) {
+      const noteId = path.split('/')[4];
+      const { content } = JSON.parse(event.body || '{}');
+      const result = await pool.query('UPDATE prospect_notes SET content=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *', [content, noteId, companyId]);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'DELETE' && path.match(/^\/prospects\/\d+\/notes\/\d+$/)) {
+      const noteId = path.split('/')[4];
+      await pool.query('DELETE FROM prospect_notes WHERE id=$1 AND company_id=$2', [noteId, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/hunter$/)) {
+      const id = path.split('/')[2];
+      const domain = event.queryStringParameters?.domain;
+      const company = event.queryStringParameters?.company;
+      if (!domain && !company) return respond(400, { error: 'domain or company required' });
+
+      // Check cache first — never call Hunter twice for same prospect+domain
+      const cached = await pool.query(
+        `SELECT response_data FROM enrichment_log
+         WHERE prospect_id=$1 AND service='hunter' AND status='hit'
+         ORDER BY called_at DESC LIMIT 1`,
+        [id]
+      );
+      if (cached.rows.length) {
+        await pool.query(
+          `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, called_at)
+           VALUES ($1,$2,'hunter','cached',0,NOW())`,
+          [companyId, id]
+        );
+        return respond(200, { ...cached.rows[0].response_data, _cached: true });
+      }
+
+      // No cache — call Hunter API and log it
+      const searchParam = domain
+        ? `domain=${encodeURIComponent(domain)}`
+        : `company=${encodeURIComponent(company)}`;
+      const res = await fetch(`https://api.hunter.io/v2/domain-search?${searchParam}&api_key=8ceaa086ea6e3098b32b42ef15d85c08a9aef254&limit=10`);
+      const data = await res.json();
+      const hit = data?.data?.emails?.length > 0;
+      await pool.query(
+        `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, response_data, called_at)
+         VALUES ($1,$2,'hunter',$3,1,$4,NOW())`,
+        [companyId, id, hit ? 'hit' : 'miss', JSON.stringify(data)]
+      );
+      return respond(200, data);
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/tdlr$/)) {
+      const id = path.split('/')[2];
+      const prospect = await pool.query('SELECT address, city, name FROM prospects WHERE id=$1 AND company_id=$2', [id, companyId]);
+      if (!prospect.rows.length) return respond(404, { error: 'Not found' });
+      const p = prospect.rows[0];
+      const searchTerms = [p.address, p.city, p.name].filter(Boolean);
+      let result = { rows: [] };
+      for (const term of searchTerms) {
+        result = await pool.query(`SELECT * FROM building_registry WHERE LOWER(building_address) LIKE LOWER($1) OR LOWER(building_name) LIKE LOWER($2) LIMIT 10`, [`%${term}%`, `%${p.name}%`]);
+        if (result.rows.length) break;
+      }
+      return respond(200, result.rows);
+    }
+
+    // GET /prospects/:id/proposal — fetch existing proposal
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/proposal$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT content, generated_at FROM proposals WHERE prospect_id=$1 AND company_id=$2 ORDER BY generated_at DESC LIMIT 1', [id, companyId]);
+      if (!result.rows.length) return respond(200, { status: 'not_found' });
+      return respond(200, { status: 'ready', content: result.rows[0].content, generated_at: result.rows[0].generated_at });
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/proposal$/)) {
+      const id = path.split('/')[2];
+      const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+      const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+      const prospectResult = await pool.query('SELECT * FROM prospects WHERE id=$1 AND company_id=$2', [id, companyId]);
+      const prospect = prospectResult.rows[0];
+      const profileResult = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      const profile = profileResult.rows[0] || {};
+      const projectsResult = await pool.query('SELECT * FROM completed_projects WHERE company_id=$1 ORDER BY created_at DESC LIMIT 3', [companyId]);
+      const projects = projectsResult.rows;
+      const contactResult = await pool.query(`
+        SELECT * FROM prospect_contacts 
+        WHERE prospect_id=$1 AND company_id=$2
+        ORDER BY CASE 
+          WHEN LOWER(title) LIKE '%facilit%' THEN 1
+          WHEN LOWER(title) LIKE '%engineer%' THEN 2
+          WHEN LOWER(title) LIKE '%operation%' THEN 3
+          WHEN LOWER(title) LIKE '%property%' THEN 4
+          WHEN LOWER(title) LIKE '%building%' THEN 5
+          WHEN LOWER(title) LIKE '%maintenance%' THEN 6
+          WHEN LOWER(title) LIKE '%director%' THEN 7
+          WHEN LOWER(title) LIKE '%manager%' THEN 8
+          WHEN is_primary = TRUE THEN 0
+          ELSE 9
+        END ASC LIMIT 1
+      `, [id, companyId]);
+      const contact = contactResult.rows[0];
+      const prompt = `You are writing a professional elevator service proposal on behalf of ${profile.company_name || 'Southwest Cabs Elevator Services'}, a Texas-based elevator maintenance and repair company.
+
+PROSPECT: ${prospect.name} | ${prospect.city}, ${prospect.state} | ${prospect.type} | Rating: ${prospect.rating}/5 (${prospect.total_reviews} reviews)
+DECISION MAKER: ${contact ? contact.first_name + ' ' + contact.last_name + ', ' + contact.title : 'Facilities Manager'}
+OUR COMPANY: ${profile.company_name || 'Southwest Cabs Elevator Services'} | ${profile.bio || 'Texas elevator specialists'} | ${profile.years_in_business || '20+'} years | ${profile.credentials || 'Licensed TX contractor'}
+PROJECTS: ${projects.map(p => p.title + (p.description ? ' — ' + p.description : '')).join('; ') || 'Multiple Texas commercial properties'}
+
+Write a professional proposal with ## headers: Executive Summary, Understanding Your Needs, Our Proposed Services, Why Choose Us, Investment, Next Steps. Make it specific to ${prospect.name}. Use today's date: ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}. Use these contact details at the end: Phone: ${profile.phone || 'N/A'}, Email: ${profile.email || 'N/A'}, TDLR License: ${profile.tdlr_license || 'N/A'}.`;
+      const resp = await bedrock.send(new InvokeModelCommand({
+        modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        contentType: 'application/json', accept: 'application/json',
+        body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1800, messages: [{ role: 'user', content: prompt }] })
+      }));
+      const text = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+      await pool.query('INSERT INTO proposals (prospect_id, company_id, content, generated_at) VALUES ($1,$2,$3,NOW()) ON CONFLICT (prospect_id) DO UPDATE SET content=$3, generated_at=NOW()', [id, companyId, text]);
+      await logActivity(pool, companyId, null, 'proposal_generated', 'prospect', parseInt(id), { name: prospect.name });
+      return respond(200, { content: text });
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/improve-proposal$/)) {
+      const id = path.split('/')[2];
+      const { content } = JSON.parse(event.body || '{}');
+      const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+      const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+      const prospectResult = await pool.query('SELECT * FROM prospects WHERE id=$1 AND company_id=$2', [id, companyId]);
+      const prospect = prospectResult.rows[0];
+      const prompt = `Improve this elevator service proposal for ${prospect.name}. Make it more compelling and professional. Return only the improved text.\n\n${content}`;
+      const resp = await bedrock.send(new InvokeModelCommand({
+        modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        contentType: 'application/json', accept: 'application/json',
+        body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] })
+      }));
+      const improved = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+      await pool.query('INSERT INTO proposals (prospect_id, company_id, content, generated_at) VALUES ($1,$2,$3,NOW()) ON CONFLICT (prospect_id) DO UPDATE SET content=$3, generated_at=NOW()', [id, companyId, improved]);
+      return respond(200, { content: improved });
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/send-proposal$/)) {
+      const id = path.split('/')[2];
+      const { to, subject, content } = JSON.parse(event.body || '{}');
+      const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
+      const ses = new SESClient({ region: 'us-east-1' });
+      const profileResult = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      const profile = profileResult.rows[0] || {};
+      await ses.send(new SendEmailCommand({
+        Source: profile.email || 'derald@swcabs.com',
+        Destination: { ToAddresses: [to] },
+        Message: { Subject: { Data: subject || 'Elevator Service Proposal' }, Body: { Text: { Data: content } } }
+      }));
+      return respond(200, { success: true });
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/intro-email$/)) {
+      const id = path.split('/')[2];
+      const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+      const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+      const prospectResult = await pool.query('SELECT * FROM prospects WHERE id=$1 AND company_id=$2', [id, companyId]);
+      const prospect = prospectResult.rows[0];
+      const profileResult = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      const profile = profileResult.rows[0] || {};
+      const projectsResult = await pool.query('SELECT * FROM completed_projects WHERE company_id=$1 ORDER BY created_at DESC LIMIT 2', [companyId]);
+      const projects = projectsResult.rows;
+      const contactResult = await pool.query(`
+        SELECT * FROM prospect_contacts 
+        WHERE prospect_id=$1 AND company_id=$2
+        ORDER BY CASE 
+          WHEN LOWER(title) LIKE '%facilit%' THEN 1
+          WHEN LOWER(title) LIKE '%engineer%' THEN 2
+          WHEN LOWER(title) LIKE '%operation%' THEN 3
+          WHEN LOWER(title) LIKE '%property%' THEN 4
+          WHEN LOWER(title) LIKE '%building%' THEN 5
+          WHEN LOWER(title) LIKE '%maintenance%' THEN 6
+          WHEN LOWER(title) LIKE '%director%' THEN 7
+          WHEN LOWER(title) LIKE '%manager%' THEN 8
+          WHEN is_primary = TRUE THEN 0
+          ELSE 9
+        END ASC LIMIT 1
+      `, [id, companyId]);
+      const contact = contactResult.rows[0];
+      const prompt = `Write a cold outreach email from ${profile.company_name || 'Southwest Cabs Elevator Services'} to ${prospect.name}.
+
+SENDER: ${profile.company_name || 'Southwest Cabs'} | ${profile.bio || 'Texas elevator specialists'} | ${profile.years_in_business || '20+'} years | Projects: ${projects.map(p => p.title).join(', ') || 'Multiple TX properties'}
+RECIPIENT: ${contact ? contact.first_name + ' ' + contact.last_name + ', ' + contact.title : 'Facilities Manager'} at ${prospect.name}, ${prospect.city} TX
+BUILDING: ${prospect.type} | Rating: ${prospect.rating}/5 (${prospect.total_reviews} reviews)
+
+Format: Subject line, then 3 short paragraphs: (1) specific observation about their building, (2) brief company intro with relevant credential, (3) low-pressure CTA offering free assessment. Under 200 words. Write like a real person.`;
+      const resp = await bedrock.send(new InvokeModelCommand({
+        modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+        contentType: 'application/json', accept: 'application/json',
+        body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      }));
+      const text = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+      await logActivity(pool, companyId, null, 'intro_email_generated', 'prospect', parseInt(id), { name: prospect.name });
+      return respond(200, { content: text });
+    }
+
+    if (method === 'GET' && path.match(/^\/prospects\/\d+\/contracts$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT * FROM contracts WHERE prospect_id=$1 AND company_id=$2 ORDER BY created_at DESC LIMIT 1', [id, companyId]);
+      return respond(200, result.rows[0] || null);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/people-search$/)) {
+      const id = path.split('/')[2];
+      const { company_name } = JSON.parse(event.body || '{}');
+      if (!company_name) return respond(400, { error: 'company_name required' });
+      const pdlRes = await fetch('https://api.peopledatalabs.com/v5/person/search', {
+        method: 'POST',
+        headers: { 'X-Api-Key': 'a8ea15492d7ae5057cf8d92b6044c5ec5ec175fb515cc76df10a19881ab427f6', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: { bool: { must: [{ match: { job_company_name: company_name } }], should: [{ terms: { job_title_role: ['facilities','operations','management','engineering'] } }, { terms: { job_title_levels: ['director','vp','owner','c_suite','manager'] } }] } }, size: 10 })
+      });
+      const pdlData = await pdlRes.json();
+      if (!pdlData.data?.length) return respond(200, { results: [] });
+      const results = pdlData.data.map(p => ({ name: p.full_name ? p.full_name.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ') : '', title: p.job_title||'', linkedin_url: p.linkedin_url?'https://'+p.linkedin_url:null, email: p.work_email||p.emails?.[0]?.address||null, location: p.location_name||'' }));
+      return respond(200, { results });
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/enrich-company$/)) {
+      const id = path.split('/')[2];
+      const { company_name, domain } = JSON.parse(event.body || '{}');
+
+      // Check cache — if we already enriched this prospect company, return cached
+      const cached = await pool.query(
+        `SELECT response_data FROM enrichment_log
+         WHERE prospect_id=$1 AND service='pdl' AND status='hit'
+         AND response_data ? 'employee_count'
+         ORDER BY called_at DESC LIMIT 1`,
+        [id]
+      );
+      if (cached.rows.length) {
+        await pool.query(
+          `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, called_at)
+           VALUES ($1,$2,'pdl','cached',0,NOW())`,
+          [companyId, id]
+        );
+        return respond(200, { ...cached.rows[0].response_data, _cached: true });
+      }
+
+      // No cache — call PDL API
+      const query = domain ? 'website='+domain : 'name='+encodeURIComponent(company_name);
+      const res = await fetch('https://api.peopledatalabs.com/v5/company/enrich?'+query+'&pretty=true', { headers: { 'X-Api-Key': 'a8ea15492d7ae5057cf8d92b6044c5ec5ec175fb515cc76df10a19881ab427f6' } });
+      const data = await res.json();
+      if (res.status !== 200) {
+        await pool.query(
+          `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, called_at)
+           VALUES ($1,$2,'pdl','miss',1,NOW())`,
+          [companyId, id]
+        );
+        return respond(200, { found: false });
+      }
+      const result = { found: true, employee_count: data.employee_count, employee_count_range: data.employee_count_range, founded: data.founded, industry: data.industry, linkedin_url: data.linkedin_url?'https://'+data.linkedin_url:null, website: data.website, location: data.location?.name||null, tags: data.tags||[] };
+      await pool.query(
+        `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, response_data, called_at)
+         VALUES ($1,$2,'pdl','hit',1,$3,NOW())`,
+        [companyId, id, JSON.stringify(result)]
+      );
+      return respond(200, result);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/enrich-person$/)) {
+      const id = path.split('/')[2];
+      const { linkedin_url, email } = JSON.parse(event.body || '{}');
+      if (!linkedin_url && !email) return respond(400, { error: 'linkedin_url or email required' });
+
+      // Cache key — linkedin_url or email
+      const cacheKey = linkedin_url || email;
+      const cached = await pool.query(
+        `SELECT response_data FROM enrichment_log
+         WHERE prospect_id=$1 AND service='pdl' AND status='hit'
+         AND response_data ? 'full_name'
+         ORDER BY called_at DESC LIMIT 1`,
+        [id]
+      );
+      if (cached.rows.length) {
+        await pool.query(
+          `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, called_at)
+           VALUES ($1,$2,'pdl','cached',0,NOW())`,
+          [companyId, id]
+        );
+        return respond(200, { ...cached.rows[0].response_data, _cached: true });
+      }
+
+      // No cache — call PDL API
+      const query = linkedin_url ? 'profile='+encodeURIComponent(linkedin_url) : 'email='+encodeURIComponent(email);
+      const res = await fetch('https://api.peopledatalabs.com/v5/person/enrich?'+query+'&pretty=true', { headers: { 'X-Api-Key': 'a8ea15492d7ae5057cf8d92b6044c5ec5ec175fb515cc76df10a19881ab427f6' } });
+      const data = await res.json();
+      if (res.status !== 200) {
+        await pool.query(
+          `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, called_at)
+           VALUES ($1,$2,'pdl','miss',1,NOW())`,
+          [companyId, id]
+        );
+        return respond(200, { found: false });
+      }
+      const result = { found: true, full_name: data.full_name, title: data.job_title, email: data.work_email||data.emails?.[0]?.address||null, phone: data.mobile_phone||data.phone_numbers?.[0]?.number||null, linkedin_url: data.linkedin_url?'https://'+data.linkedin_url:null, location: data.location_name||null, industry: data.industry||null };
+      await pool.query(
+        `INSERT INTO enrichment_log (company_id, prospect_id, service, status, credits_used, response_data, called_at)
+         VALUES ($1,$2,'pdl','hit',1,$3,NOW())`,
+        [companyId, id, JSON.stringify(result)]
+      );
+      return respond(200, result);
+    }
+
+    if (method === 'POST' && path.match(/^\/prospects\/\d+\/enrich-places$/)) {
+      const id = parseInt(path.split('/')[2]);
+      const prospect = await pool.query(
+        'SELECT id, name, address, city, state FROM prospects WHERE id=$1 AND company_id=$2 AND archived=FALSE',
+        [id, companyId]
+      );
+      if (!prospect.rows.length) return respond(404, { error: 'Prospect not found' });
+      const p = prospect.rows[0];
+
+      const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY;
+      if (!GOOGLE_KEY) return respond(500, { error: 'GOOGLE_MAPS_KEY not configured' });
+
+      const searchText = `${p.name} ${p.address} ${p.city} ${p.state || 'TX'}`;
+      let enriched = {};
+      let source = null;
+
+      // Places API (New) — full enrichment
+      try {
+        const placesRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_KEY,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount'
+          },
+          body: JSON.stringify({ textQuery: searchText, maxResultCount: 1 })
+        });
+        const placesJson = await placesRes.json();
+        const place = placesJson.places?.[0];
+        console.log('enrich-places (New):', placesRes.status, 'results:', placesJson.places?.length ?? 0);
+        if (place) {
+          enriched = {
+            google_place_id: place.id || null,
+            phone:           place.nationalPhoneNumber || null,
+            website:         place.websiteUri || null,
+            rating:          place.rating || null,
+            total_reviews:   place.userRatingCount || 0,
+            lat:             place.location?.latitude || null,
+            lng:             place.location?.longitude || null,
+          };
+          if (place.location?.latitude && place.location?.longitude) source = 'places_new';
+        }
+      } catch(e) { console.log('enrich-places Places (New) error:', e.message); }
+
+      // Geocoding fallback — coords only
+      if (!enriched.lat) {
+        try {
+          const geocodeRes = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchText)}&key=${GOOGLE_KEY}`
+          );
+          const geocodeJson = await geocodeRes.json();
+          console.log('enrich-places Geocoding fallback:', geocodeJson.status);
+          if (geocodeJson.status === 'OK' && geocodeJson.results?.length > 0) {
+            const loc = geocodeJson.results[0].geometry.location;
+            enriched.lat = loc.lat;
+            enriched.lng = loc.lng;
+            source = source || 'geocoding';
+          } else {
+            return respond(422, {
+              error: 'Could not resolve coordinates for this address',
+              partial_data_available: !!enriched.google_place_id
+            });
+          }
+        } catch(e2) {
+          console.log('enrich-places Geocoding fallback error:', e2.message);
+          return respond(422, {
+            error: 'Could not resolve coordinates for this address',
+            partial_data_available: !!enriched.google_place_id
+          });
+        }
+      }
+
+      await pool.query(`
+        UPDATE prospects SET
+          google_place_id  = COALESCE($1, google_place_id),
+          phone            = COALESCE($2, phone),
+          website          = COALESCE($3, website),
+          rating           = COALESCE($4, rating),
+          total_reviews    = COALESCE($5, total_reviews),
+          latitude         = COALESCE($6, latitude),
+          longitude        = COALESCE($7, longitude),
+          enrichment_source = $8,
+          updated_at       = NOW()
+        WHERE id = $9 AND company_id = $10
+      `, [
+        enriched.google_place_id || null, enriched.phone || null,
+        enriched.website || null, enriched.rating || null,
+        enriched.total_reviews || null, enriched.lat || null,
+        enriched.lng || null, source, id, companyId
+      ]);
+
+      const updated = await pool.query(
+        'SELECT id, name, latitude, longitude, phone, website, rating, total_reviews, google_place_id, enrichment_source FROM prospects WHERE id=$1',
+        [id]
+      );
+      return respond(200, { ...updated.rows[0], enrichment_source: source });
+    }
+
+    if (method === 'GET' && path === '/customers') {
+      const result = await pool.query('SELECT * FROM customers WHERE archived=FALSE AND company_id=$1 ORDER BY created_at DESC', [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'PATCH' && path.match(/^\/customers\/\d+\/archive$/)) {
+      const id = path.split('/')[2];
+      const { archived } = JSON.parse(event.body || '{}');
+      await pool.query('UPDATE customers SET archived=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3', [archived, id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path.match(/^\/customers\/\d+\/contracts$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT * FROM contracts WHERE customer_id=$1 AND company_id=$2 ORDER BY created_at DESC', [id, companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'GET' && path === '/contracts') {
+      const result = await pool.query(`SELECT c.*, p.name as prospect_name, cu.company_name as customer_name FROM contracts c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN customers cu ON cu.id=c.customer_id WHERE c.company_id=$1 ORDER BY c.created_at DESC`, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/contracts') {
+      const { prospect_id, customer_id, company_name, annual_value, monthly_value, start_date, end_date, term_months, elevators_under_contract, service_frequency, notes } = JSON.parse(event.body || '{}');
+      const monthly = monthly_value||(annual_value?annual_value/12:0);
+      const annual = annual_value||(monthly_value?monthly_value*12:0);
+      let calcEndDate = end_date;
+      if (!calcEndDate && start_date && term_months) { const s = new Date(start_date); s.setMonth(s.getMonth()+parseInt(term_months)); calcEndDate = s.toISOString().split('T')[0]; }
+      const result = await pool.query(`INSERT INTO contracts (prospect_id, customer_id, company_name, annual_value, monthly_value, start_date, end_date, term_months, elevators_under_contract, service_frequency, notes, company_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [prospect_id, customer_id, company_name, annual, monthly, start_date, calcEndDate, term_months, elevators_under_contract, service_frequency, notes, companyId]);
+      if (customer_id) await pool.query('UPDATE customers SET account_status=$1 WHERE id=$2 AND company_id=$3', ['active', customer_id, companyId]);
+      await logActivity(pool, companyId, null, 'contract_created', 'contract', result.rows[0].id, { value: annual });
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^\/contracts\/\d+$/)) {
+      const id = path.split('/')[2];
+      const { annual_value, monthly_value, start_date, end_date, term_months, elevators_under_contract, service_frequency, contract_status, notes } = JSON.parse(event.body || '{}');
+      const result = await pool.query(`UPDATE contracts SET annual_value=COALESCE($1,annual_value), monthly_value=COALESCE($2,monthly_value), start_date=COALESCE($3,start_date), end_date=COALESCE($4,end_date), term_months=COALESCE($5,term_months), elevators_under_contract=COALESCE($6,elevators_under_contract), service_frequency=COALESCE($7,service_frequency), contract_status=COALESCE($8,contract_status), notes=COALESCE($9,notes), updated_at=NOW() WHERE id=$10 AND company_id=$11 RETURNING *`,
+        [annual_value, monthly_value, start_date, end_date, term_months, elevators_under_contract, service_frequency, contract_status, notes, id, companyId]);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'GET' && path === '/tdlr/expiring') {
+      const { days = '30', city, county, limit = '50', offset = '0', equipment_type } = event.queryStringParameters || {};
+      let query = `
+        SELECT t.*,
+          p.id as prospect_id,
+          p.name as prospect_name,
+          p.status as prospect_status,
+          CASE 
+            WHEN t.expiration < NOW() THEN 'expired'
+            WHEN t.expiration <= NOW() + INTERVAL '30 days' THEN 'critical'
+            WHEN t.expiration <= NOW() + INTERVAL '60 days' THEN 'warning'
+            ELSE 'upcoming'
+          END as urgency,
+          EXTRACT(DAY FROM t.expiration - NOW())::int as days_until_expiration
+        FROM building_registry t
+        LEFT JOIN prospects p ON p.id = t.prospect_id AND p.company_id = $1
+        WHERE t.expiration <= NOW() + ($2 || ' days')::INTERVAL
+        AND t.expiration >= NOW() - INTERVAL '365 days'
+      `;
+      const params = [companyId, days];
+      let idx = 3;
+      if (city) { query += ` AND UPPER(t.building_city) = UPPER($${idx++})`; params.push(city); }
+      if (county) { query += ` AND UPPER(t.building_county) = UPPER($${idx++})`; params.push(county); }
+      if (equipment_type) { query += ` AND t.equipment_type = $${idx++}`; params.push(equipment_type); }
+      query += ` ORDER BY t.expiration ASC LIMIT $${idx++} OFFSET $${idx++}`;
+      params.push(parseInt(limit), parseInt(offset));
+      const result = await pool.query(query, params);
+
+      // Get counts
+      const counts = await pool.query(`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE expiration < NOW()) as expired,
+          COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days') as expiring_30,
+          COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days') as expiring_60,
+          COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days') as expiring_90
+        FROM building_registry
+      `);
+
+      // Get cities
+      const cities = await pool.query(`
+        SELECT building_city, COUNT(*) as count 
+        FROM building_registry 
+        WHERE expiration <= NOW() + ($1 || ' days')::INTERVAL
+        AND expiration >= NOW() - INTERVAL '365 days'
+        GROUP BY building_city ORDER BY count DESC LIMIT 20
+      `, [days]);
+
+      return respond(200, {
+        records: result.rows,
+        counts: counts.rows[0],
+        cities: cities.rows
+      });
+    }
+
+    if (method === 'POST' && path === '/tdlr/add-prospect') {
+      const { tdlr_id, building_name, building_address, building_city, building_state, building_zip, owner_name, elevator_number } = JSON.parse(event.body || '{}');
+      // Check if prospect already exists
+      const existing = await pool.query(
+        'SELECT id FROM prospects WHERE company_id=$1 AND name=$2',
+        [companyId, building_name]
+      );
+      if (existing.rows.length > 0) {
+        return respond(200, { prospect_id: existing.rows[0].id, already_existed: true });
+      }
+      // Create new prospect
+      const result = await pool.query(
+        'INSERT INTO prospects (company_id, name, address, city, state, zip_code, status, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
+        [companyId, building_name, building_address, building_city, building_state || 'TX', building_zip, 'new']
+      );
+      const prospectId = result.rows[0].id;
+
+      // Get full TDLR record to populate elevator intelligence
+      const tdlrRecord = await pool.query('SELECT * FROM building_registry WHERE id=$1', [tdlr_id]);
+      if (tdlrRecord.rows.length > 0) {
+        const t = tdlrRecord.rows[0];
+        const ageYears = t.year_installed ? new Date().getFullYear() - t.year_installed : null;
+        const urgencyScore = t.expiration < new Date() ? 'high' : 'medium';
+        
+        // Create elevator intelligence record
+        await pool.query(`
+          INSERT INTO elevator_intelligence 
+            (prospect_id, company_id, estimated_floors, estimated_elevators, building_age, 
+             service_urgency, modernization_candidate, analysis_date, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
+          ON CONFLICT (prospect_id) DO UPDATE SET
+            estimated_floors=EXCLUDED.estimated_floors,
+            estimated_elevators=EXCLUDED.estimated_elevators,
+            building_age=EXCLUDED.building_age,
+            service_urgency=EXCLUDED.service_urgency,
+            modernization_candidate=EXCLUDED.modernization_candidate,
+            updated_at=NOW()
+        `, [
+          prospectId, companyId,
+          t.floors || null,
+          1,
+          ageYears,
+          urgencyScore,
+          ageYears && ageYears > 20 ? true : false
+        ]);
+
+        // Update prospect with phone if available
+        await pool.query(
+          'UPDATE prospects SET notes=$1 WHERE id=$2',
+          [`TDLR Record: ${t.elevator_number}. Equipment: ${t.equipment_type} ${t.drive_type}. Installed: ${t.year_installed}. Certificate expires: ${t.expiration ? new Date(t.expiration).toLocaleDateString() : 'N/A'}. Owner: ${t.owner_name}`, prospectId]
+        );
+      }
+
+      // Link to TDLR record
+      await pool.query('UPDATE building_registry SET prospect_id=$1 WHERE id=$2', [prospectId, tdlr_id]);
+      await logActivity(pool, companyId, null, 'prospect_created', 'prospect', prospectId, { source: 'tdlr', elevator_number });
+
+      // Search Google Places for real website and phone
+      try {
+        const GOOGLE_KEY = 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
+        const query = encodeURIComponent(building_name + ' ' + building_city + ' ' + (building_state || 'TX'));
+        const placesRes = await fetch(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${query}&inputtype=textquery&fields=name,formatted_address,website,formatted_phone_number,place_id&key=${GOOGLE_KEY}`);
+        const placesData = await placesRes.json();
+        if (placesData.candidates && placesData.candidates.length > 0) {
+          const place = placesData.candidates[0];
+          const updates = [];
+          const vals = [];
+          let pidx = 1;
+          if (place.website) { updates.push('website=$' + pidx++); vals.push(place.website); }
+          if (place.formatted_phone_number) { updates.push('phone=$' + pidx++); vals.push(place.formatted_phone_number); }
+          if (place.place_id) { updates.push('google_place_id=$' + pidx++); vals.push(place.place_id); }
+          if (updates.length > 0) {
+            vals.push(prospectId);
+            await pool.query('UPDATE prospects SET ' + updates.join(',') + ' WHERE id=$' + pidx, vals);
+          }
+        }
+      } catch(ge) { console.log('Google Places lookup:', ge.message); }
+
+      // Trigger AI scoring async
+      try {
+        const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+        const lambda = new LambdaClient({ region: 'us-east-1' });
+        await lambda.send(new InvokeCommand({
+          FunctionName: 'smartlift-api',
+          InvocationType: 'Event',
+          Payload: JSON.stringify({
+            httpMethod: 'POST',
+            path: '/prospects/' + prospectId + '/score',
+            headers: event.headers,
+            body: JSON.stringify({ prospect_id: prospectId }),
+            queryStringParameters: {},
+          })
+        }));
+      } catch(se) { console.log('AI scoring trigger:', se.message); }
+
+      return respond(201, { prospect_id: prospectId, already_existed: false });
+    }
+
+    if (method === 'GET' && path === '/analytics/tdlr') {
+      const result = await pool.query(`SELECT COUNT(*) as total_records, COUNT(DISTINCT building_county) as counties, COUNT(CASE WHEN expiration < NOW() THEN 1 END) as expired_certs, COUNT(CASE WHEN expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days' THEN 1 END) as expiring_soon FROM building_registry`);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'GET' && path === '/building-registry') {
+      const qp = event.queryStringParameters || {};
+      if (!qp.state) return respond(400, { error: 'state query param is required' });
+      const state        = qp.state;
+      const city         = qp.city;
+      const cert_status  = qp.cert_status || 'all';
+      const equip_type   = qp.equipment_type || 'all';
+      const min_elevators = qp.min_elevators ? parseInt(qp.min_elevators) : null;
+      const q            = qp.q;
+      const excludeExisting = qp.exclude_existing !== 'false';
+      const lim          = parseInt(qp.limit || '50');
+      const off          = parseInt(qp.offset || '0');
+
+      if (!REGISTRY_STATES.includes(state)) {
+        return respond(200, {
+          summary: { total_buildings: 0, expired_now: 0, expiring_30d: 0, expiring_60d: 0, expiring_90d: 0, matching_filter: 0, data_available: false, source: null },
+          buildings: []
+        });
+      }
+
+      // TODO: Summary query groups all TX rows per request — fine at 74k rows on indexed Aurora.
+      // Revisit when multi-state data is loaded; consider materialized view refreshed nightly.
+      const summaryResult = await pool.query(`
+        WITH b AS (
+          SELECT
+            building_name, building_address, building_city,
+            COUNT(*) FILTER (WHERE expiration < NOW())                                       AS exp0,
+            COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days')  AS exp30,
+            COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days')  AS exp60,
+            COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days')  AS exp90
+          FROM building_registry
+          WHERE source = 'TDLR_TX'
+          GROUP BY building_name, building_address, building_city
+        )
+        SELECT
+          COUNT(*)                            AS total_buildings,
+          COUNT(*) FILTER (WHERE exp0  > 0)   AS expired_now,
+          COUNT(*) FILTER (WHERE exp30 > 0)   AS expiring_30d,
+          COUNT(*) FILTER (WHERE exp60 > 0)   AS expiring_60d,
+          COUNT(*) FILTER (WHERE exp90 > 0)   AS expiring_90d
+        FROM b
+      `);
+      const sum = summaryResult.rows[0];
+
+      const params = [companyId];
+      let idx = 2;
+      const whereClauses = [`br.source = 'TDLR_TX'`];
+      const havingClauses = [];
+
+      if (city) {
+        whereClauses.push(`UPPER(br.building_city) = UPPER($${idx++})`);
+        params.push(city);
+      }
+      if (q) {
+        whereClauses.push(`(UPPER(br.building_name) LIKE UPPER($${idx}) OR UPPER(br.building_address) LIKE UPPER($${idx}) OR UPPER(br.owner_name) LIKE UPPER($${idx}))`);
+        params.push(`%${q}%`);
+        idx++;
+      }
+
+      // Matches buildings that contain at least one elevator of this type
+      if (equip_type !== 'all') {
+        havingClauses.push(`COUNT(*) FILTER (WHERE br.equipment_type = $${idx++}) > 0`);
+        params.push(equip_type);
+      }
+
+      if      (cert_status === 'expired')     havingClauses.push(`COUNT(*) FILTER (WHERE br.expiration < NOW()) > 0`);
+      else if (cert_status === 'expiring_30') havingClauses.push(`COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days') > 0`);
+      else if (cert_status === 'expiring_60') havingClauses.push(`COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days') > 0`);
+      else if (cert_status === 'expiring_90') havingClauses.push(`COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days') > 0`);
+      else if (cert_status === 'current')     havingClauses.push(`COUNT(*) FILTER (WHERE br.expiration < NOW()) = 0`);
+
+      if (min_elevators) {
+        havingClauses.push(`COUNT(*) >= $${idx++}`);
+        params.push(min_elevators);
+      }
+      // excludeExisting adds a HAVING clause but no param — params.length math for LIMIT/OFFSET is unaffected
+      if (excludeExisting) {
+        havingClauses.push(`bool_or(p.id IS NOT NULL) = false`);
+      }
+
+      const whereSQL  = `WHERE ${whereClauses.join(' AND ')}`;
+      const havingSQL = havingClauses.length ? `HAVING ${havingClauses.join(' AND ')}` : '';
+
+      const countResult = await pool.query(`
+        SELECT COUNT(*) AS total FROM (
+          SELECT br.building_name
+          FROM building_registry br
+          LEFT JOIN prospects p ON p.id = br.prospect_id AND p.company_id = $1 AND p.archived = FALSE
+          ${whereSQL}
+          GROUP BY br.building_name, br.building_address, br.building_city, br.building_state, br.building_zip, br.building_county
+          ${havingSQL}
+        ) sub
+      `, params);
+
+      const dataParams = [...params, lim, off];
+      const dataResult = await pool.query(`
+        SELECT
+          COALESCE(br.building_name,'') || '|' || COALESCE(br.building_address,'') AS building_key,
+          br.building_name,
+          br.building_address,
+          br.building_city,
+          br.building_state,
+          br.building_zip,
+          br.building_county,
+          MAX(br.owner_name)                                                               AS owner_name,
+          COUNT(*)::int                                                                    AS elevator_count,
+          COUNT(*) FILTER (WHERE br.equipment_type = 'PASSENGER')::int                    AS passenger_count,
+          COUNT(*) FILTER (WHERE br.equipment_type = 'FREIGHT')::int                      AS freight_count,
+          COUNT(*) FILTER (WHERE br.equipment_type = 'ESCALATOR')::int                    AS escalator_count,
+          MIN(br.expiration)                                                               AS earliest_expiration,
+          MAX(br.expiration)                                                               AS latest_expiration,
+          COUNT(*) FILTER (WHERE br.expiration < NOW())::int                              AS expired_count,
+          COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days')::int AS expiring_90d_count,
+          MIN(br.year_installed)                                                           AS year_oldest,
+          MAX(br.year_installed)                                                           AS year_newest,
+          MAX(br.floors)                                                                   AS max_floors,
+          array_agg(DISTINCT br.drive_type) FILTER (WHERE br.drive_type IS NOT NULL)      AS drive_types,
+          bool_or(p.id IS NOT NULL)                                                        AS is_existing_prospect,
+          MAX(p.id)                                                                        AS existing_prospect_id,
+          array_agg(br.id)                                                                 AS registry_ids,
+          CASE
+            WHEN COUNT(*) FILTER (WHERE br.expiration < NOW()) > 0                                         THEN 'expired'
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days') > 0   THEN 'expiring_30'
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days') > 0   THEN 'expiring_60'
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days') > 0   THEN 'expiring_90'
+            ELSE 'current'
+          END AS urgency_signal
+        FROM building_registry br
+        LEFT JOIN prospects p ON p.id = br.prospect_id AND p.company_id = $1 AND p.archived = FALSE
+        ${whereSQL}
+        GROUP BY br.building_name, br.building_address, br.building_city, br.building_state, br.building_zip, br.building_county
+        ${havingSQL}
+        ORDER BY
+          CASE
+            WHEN COUNT(*) FILTER (WHERE br.expiration < NOW()) > 0                                         THEN 0
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days') > 0   THEN 1
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days') > 0   THEN 2
+            WHEN COUNT(*) FILTER (WHERE br.expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days') > 0   THEN 3
+            ELSE 4
+          END ASC,
+          COUNT(*) DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `, dataParams);
+
+      return respond(200, {
+        summary: {
+          total_buildings:  parseInt(sum.total_buildings),
+          expired_now:      parseInt(sum.expired_now),
+          expiring_30d:     parseInt(sum.expiring_30d),
+          expiring_60d:     parseInt(sum.expiring_60d),
+          expiring_90d:     parseInt(sum.expiring_90d),
+          matching_filter:  parseInt(countResult.rows[0].total),
+          data_available:   true,
+          source:           'TDLR_TX'
+        },
+        buildings: dataResult.rows
+      });
+    }
+
+    if (method === 'GET' && path === '/building-registry/cities') {
+      const state = (event.queryStringParameters || {}).state;
+      if (!state) return respond(400, { error: 'state is required' });
+
+      if (!REGISTRY_STATES.includes(state.toUpperCase())) {
+        return respond(200, { cities: [], data_available: false });
+      }
+
+      const result = await pool.query(`
+        SELECT building_city, COUNT(*) AS building_count
+        FROM building_registry
+        WHERE building_state = $1 AND source = $2 AND building_city IS NOT NULL
+        GROUP BY building_city
+        HAVING COUNT(*) >= 3
+        ORDER BY building_count DESC, building_city ASC
+      `, [state.toUpperCase(), 'TDLR_TX']);
+
+      return respond(200, {
+        cities: result.rows.map(r => r.building_city),
+        data_available: true
+      });
+    }
+
+    if (method === 'POST' && path === '/building-registry/promote') {
+      const { building_key, registry_ids } = JSON.parse(event.body || '{}');
+      if (!building_key || !Array.isArray(registry_ids) || !registry_ids.length)
+        return respond(400, { error: 'building_key and registry_ids[] are required' });
+
+      // Fetch one representative row for building metadata
+      const repResult = await pool.query(
+        'SELECT * FROM building_registry WHERE id = $1 LIMIT 1',
+        [registry_ids[0]]
+      );
+      if (!repResult.rows.length) return respond(404, { error: 'Registry record not found' });
+      const rep = repResult.rows[0];
+
+      // Dedup by uppercased name+address. TDLR-to-TDLR is reliable (same source).
+      // Manually-created prospects with different address formatting may slip through. Acceptable for v1.
+      const existingProspect = await pool.query(
+        'SELECT id FROM prospects WHERE company_id=$1 AND UPPER(name)=UPPER($2) AND UPPER(address)=UPPER($3) AND archived=FALSE LIMIT 1',
+        [companyId, rep.building_name, rep.building_address]
+      );
+      if (existingProspect.rows.length) {
+        return respond(409, { error: 'Prospect already exists', id: existingProspect.rows[0].id });
+      }
+
+      // Google enrichment: Places API (New) for full data, Geocoding as coords-only fallback
+      let placeData = {};
+      let enrichmentSource = null;
+      const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY;
+      if (!GOOGLE_KEY) {
+        console.warn('GOOGLE_MAPS_KEY env var not set — skipping Places enrichment');
+      } else {
+        const searchText = `${rep.building_name} ${rep.building_address} ${rep.building_city} ${rep.building_state || 'TX'}`;
+        let placesSuccess = false;
+
+        // Places API (New) — full enrichment: place_id, phone, website, rating, lat/lng
+        try {
+          const placesRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': GOOGLE_KEY,
+              'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount'
+            },
+            body: JSON.stringify({ textQuery: searchText, maxResultCount: 1 })
+          });
+          const placesJson = await placesRes.json();
+          const place = placesJson.places?.[0];
+          console.log('Places (New):', placesRes.status, 'results:', placesJson.places?.length ?? 0);
+          if (place) {
+            placeData = {
+              google_place_id: place.id || null,
+              phone:           place.nationalPhoneNumber || null,
+              website:         place.websiteUri || null,
+              rating:          place.rating || null,
+              total_reviews:   place.userRatingCount || 0,
+              lat:             place.location?.latitude || null,
+              lng:             place.location?.longitude || null,
+            };
+            placesSuccess = !!(place.location?.latitude && place.location?.longitude);
+            if (placesSuccess) enrichmentSource = 'places_new';
+          }
+        } catch(ge) { console.log('Places (New) error (non-fatal):', ge.message); }
+
+        // Geocoding API fallback — coords only, better than nothing
+        if (!placesSuccess) {
+          try {
+            const geocodeRes = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchText)}&key=${GOOGLE_KEY}`
+            );
+            const geocodeJson = await geocodeRes.json();
+            console.log('Geocoding fallback:', geocodeJson.status);
+            if (geocodeJson.status === 'OK' && geocodeJson.results?.length > 0) {
+              const loc = geocodeJson.results[0].geometry.location;
+              placeData.lat = loc.lat;
+              placeData.lng = loc.lng;
+              enrichmentSource = 'geocoding';
+            }
+          } catch(ge2) { console.log('Geocoding fallback error (non-fatal):', ge2.message); }
+        }
+      }
+
+      // Insert prospect with enrichment data and source tracking
+      const insertResult = await pool.query(`
+        INSERT INTO prospects
+          (name, address, city, state, zip_code, google_place_id, phone, website, rating, total_reviews,
+           latitude, longitude, type, status, lead_score, archived, company_id, enrichment_source, owner_name, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'commercial','new',NULL,FALSE,$13,$14,$15,NOW(),NOW())
+        RETURNING *
+      `, [
+        rep.building_name, rep.building_address,
+        rep.building_city, rep.building_state || 'TX', rep.building_zip || null,
+        placeData.google_place_id || null,
+        placeData.phone || null, placeData.website || null,
+        placeData.rating || null, placeData.total_reviews || 0,
+        placeData.lat || null, placeData.lng || null,
+        companyId, enrichmentSource, rep.owner_name || null
+      ]);
+      const newProspect = insertResult.rows[0];
+
+      // Link all registry rows for this building group to the new prospect
+      await pool.query(
+        'UPDATE building_registry SET prospect_id=$1 WHERE id = ANY($2)',
+        [newProspect.id, registry_ids]
+      );
+
+      // Pull verified TDLR facts for the scoring prompt
+      const registryFacts = await pool.query(`
+        SELECT
+          COUNT(*)::int                                                                    AS elevator_count,
+          COUNT(*) FILTER (WHERE equipment_type='PASSENGER')::int                         AS passenger_count,
+          COUNT(*) FILTER (WHERE equipment_type='FREIGHT')::int                           AS freight_count,
+          COUNT(*) FILTER (WHERE equipment_type='ESCALATOR')::int                         AS escalator_count,
+          MAX(floors)                                                                      AS max_floors,
+          MIN(year_installed)                                                              AS year_oldest,
+          MAX(year_installed)                                                              AS year_newest,
+          MIN(expiration)                                                                  AS earliest_expiration,
+          MAX(expiration)                                                                  AS latest_expiration,
+          COUNT(*) FILTER (WHERE expiration < NOW())::int                                 AS expired_count,
+          COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days')::int AS expiring_90d_count,
+          array_agg(DISTINCT drive_type) FILTER (WHERE drive_type IS NOT NULL)            AS drive_types,
+          MAX(owner_name)                                                                  AS owner_name
+        FROM building_registry WHERE id = ANY($1)
+      `, [registry_ids]);
+      const f = registryFacts.rows[0];
+
+      // If Lambda times out after prospect INSERT but before scoring completes,
+      // prospect exists with lead_score=null. User can refresh and retrigger scoring
+      // via POST /prospects/:id/score. Acceptable v1 behavior.
+      try {
+        const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+        const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+        const profileResult = await pool.query(
+          'SELECT company_name, bio, certifications, credentials, service_area, years_in_business FROM company_profile WHERE company_id=$1 LIMIT 1',
+          [companyId]
+        );
+        const prof = profileResult.rows[0] || {};
+        const companyName     = prof.company_name || 'Southwest Cabs Elevator Services';
+        const companyBio      = prof.bio || 'Texas elevator maintenance and repair specialists';
+        const companyCreds    = [prof.certifications, prof.credentials].filter(Boolean).join('. ') || 'Licensed Texas elevator contractor';
+        const serviceArea     = prof.service_area || 'Texas';
+        const yearsInBusiness = prof.years_in_business || '20+';
+        const buildingAge     = f.year_oldest ? new Date().getFullYear() - parseInt(f.year_oldest) : null;
+
+        const prompt = `You are a senior elevator-service sales strategist analyzing a qualified prospect for ${companyName}. You are NOT guessing — every fact below is verified from the Texas Department of Licensing & Regulation (TDLR) registry.
+
+COMPANY CONTEXT:
+${companyName} — ${companyBio}
+${yearsInBusiness} years in business · Service area: ${serviceArea}
+Certifications: ${companyCreds}
+
+PROSPECT — VERIFIED TDLR DATA:
+Building: ${rep.building_name}
+Address: ${rep.building_address}, ${rep.building_city} ${rep.building_state} ${rep.building_zip || ''}
+Owner of record: ${f.owner_name || 'Not listed'}
+Elevator count: ${f.elevator_count} total (${f.passenger_count} passenger, ${f.freight_count} freight, ${f.escalator_count} escalator)
+Max floors: ${f.max_floors || 'unknown'}
+Equipment age: oldest unit installed ${f.year_oldest || 'unknown'}, newest ${f.year_newest || 'unknown'}
+Drive types: ${(f.drive_types || []).join(', ') || 'unknown'}
+
+COMPLIANCE STATUS — THIS IS YOUR STRONGEST SIGNAL:
+Expired certificates right now: ${f.expired_count} of ${f.elevator_count} units
+Expiring within 90 days: ${f.expiring_90d_count} of ${f.elevator_count} units
+Earliest expiration: ${f.earliest_expiration ? new Date(f.earliest_expiration).toLocaleDateString() : 'unknown'}
+Latest expiration: ${f.latest_expiration ? new Date(f.latest_expiration).toLocaleDateString() : 'unknown'}
+
+GOOGLE DATA (supplementary):
+Rating: ${placeData.rating || 'none'} / ${placeData.total_reviews || 0} reviews
+Website: ${placeData.website || 'unknown'}
+Phone: ${placeData.phone || 'unknown'}
+
+INSTRUCTIONS:
+Return ONLY valid JSON matching the schema below. No markdown fences, no preamble.
+
+Scoring rubric for lead_score (0–100):
+- 90–100: Expired cert + 5+ units. Urgent code-violation liability for owner. Call today.
+- 75–89: Expired cert + 1–4 units, OR 5+ units expiring in 30d.
+- 60–74: Expiring within 90d, any unit count. Warm pipeline.
+- 40–59: Current compliance but aging equipment (pre-2000 install) or modernization signals.
+- 20–39: Current compliance, modern equipment, weak signals.
+- 0–19: Insufficient data to score confidently.
+
+service_urgency rules:
+- "high": any expired cert OR 3+ expiring in 30 days
+- "medium": expiring in 31–90 days OR aging equipment (pre-2000)
+- "low": current compliance, modern equipment
+
+ai_summary (4 sentences):
+1. What this building is and its scale (use the real elevator count, floors, and building name)
+2. Current compliance posture in plain English (cite specific cert counts)
+3. Equipment generation and implications (cite year_oldest/newest, drive_types)
+4. Primary service opportunity and overall prospect strength
+
+ai_recommendation (3 sentences):
+1. Exact decision-maker title to call (infer from owner_name: LLC = property mgmt co, Corp = facilities director, govt/school = procurement officer)
+2. Service to lead with and specific pain point for ${companyName} (cite a concrete fact from registry data)
+3. Strongest value proposition and how to handle the most likely objection
+
+Return this JSON only:
+{"sentiment_score":<0-10>,"service_urgency":"<high|medium|low>","estimated_floors":${f.max_floors || null},"estimated_elevators":${f.elevator_count},"building_age":${buildingAge || null},"modernization_candidate":<true|false>,"reputation_score":<0-10>,"common_issues":["<specific to drive_type and age>","<specific to equipment mix>","<specific to cert status>"],"ai_summary":"<4 sentences>","ai_recommendation":"<3 sentences>","lead_score":<0-100>}`;
+
+        const resp = await bedrock.send(new InvokeModelCommand({
+          modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-opus-4-7',
+          contentType: 'application/json', accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1500, messages: [{ role: 'user', content: prompt }] })
+        }));
+        const aiText = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+        let ai;
+        try {
+          ai = JSON.parse(aiText.replace(/```json|```/g, '').trim());
+        } catch(parseErr) {
+          const extract    = (field) => { const m = aiText.match(new RegExp('"' + field + '"\\s*:\\s*"([^"]*(?:\\\\"[^"]*)*)"')); return m ? m[1] : null; };
+          const extractNum = (field) => { const m = aiText.match(new RegExp('"' + field + '"\\s*:\\s*(\\d+(?:\\.\\d+)?)')); return m ? parseFloat(m[1]) : null; };
+          ai = {
+            sentiment_score:        extractNum('sentiment_score') || 7,
+            service_urgency:        extract('service_urgency') || (f.expired_count > 0 ? 'high' : 'medium'),
+            estimated_floors:       f.max_floors || null,
+            estimated_elevators:    f.elevator_count,
+            building_age:           buildingAge,
+            modernization_candidate: buildingAge && buildingAge > 20 ? true : false,
+            reputation_score:       extractNum('reputation_score') || 7,
+            common_issues:          ['Aging equipment requiring regular maintenance', 'Certificate compliance management', 'High-use component wear'],
+            ai_summary:             extract('ai_summary') || `${rep.building_name} has ${f.elevator_count} elevators with ${f.expired_count} expired certificates.`,
+            ai_recommendation:      extract('ai_recommendation') || 'Contact the property manager to discuss certificate compliance.',
+            lead_score:             extractNum('lead_score') || (f.expired_count > 0 ? 85 : 60)
+          };
+        }
+
+        await pool.query(`
+          INSERT INTO elevator_intelligence
+            (prospect_id, company_id, sentiment_score, service_urgency, estimated_floors, estimated_elevators,
+             building_age, modernization_candidate, reputation_score, common_issues, ai_summary, ai_recommendation,
+             analysis_date, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+          ON CONFLICT (prospect_id) DO UPDATE SET
+            sentiment_score=EXCLUDED.sentiment_score, service_urgency=EXCLUDED.service_urgency,
+            estimated_floors=EXCLUDED.estimated_floors, estimated_elevators=EXCLUDED.estimated_elevators,
+            building_age=EXCLUDED.building_age, modernization_candidate=EXCLUDED.modernization_candidate,
+            reputation_score=EXCLUDED.reputation_score, common_issues=EXCLUDED.common_issues,
+            ai_summary=EXCLUDED.ai_summary, ai_recommendation=EXCLUDED.ai_recommendation, updated_at=NOW()
+        `, [
+          newProspect.id, companyId,
+          ai.sentiment_score, ai.service_urgency,
+          ai.estimated_floors, ai.estimated_elevators,
+          ai.building_age, ai.modernization_candidate,
+          ai.reputation_score, JSON.stringify(ai.common_issues),
+          ai.ai_summary, ai.ai_recommendation
+        ]);
+        await pool.query('UPDATE prospects SET lead_score=$1 WHERE id=$2', [ai.lead_score, newProspect.id]);
+        newProspect.lead_score = ai.lead_score;
+        console.log('Scored prospect', newProspect.id, 'score:', ai.lead_score, 'from registry promote');
+      } catch(e) { console.log('Scoring failed (non-fatal):', e.message); }
+
+      await logActivity(pool, companyId, null, 'prospect_created', 'prospect', newProspect.id, { source: 'building_registry', building_key });
+      return respond(201, { id: newProspect.id, name: newProspect.name, lead_score: newProspect.lead_score });
+    }
+
+    if (method === 'POST' && path === '/registry-requests') {
+      const { state, city, notes } = JSON.parse(event.body || '{}');
+      if (!state) return respond(400, { error: 'state is required' });
+      await pool.query(
+        'INSERT INTO registry_requests (company_id, state, city, notes) VALUES ($1, $2, $3, $4)',
+        [companyId, state.toUpperCase(), city || null, notes || null]
+      );
+      return respond(200, { success: true, message: `We'll notify you when ${state.toUpperCase()} data is available.` });
+    }
+
+    if (method === 'GET' && path === '/analytics/contracts') {
+      const result = await pool.query(`SELECT COUNT(*) as total_contracts, SUM(annual_value) as total_annual_revenue, SUM(monthly_value) as total_monthly_revenue, COUNT(CASE WHEN contract_status='active' THEN 1 END) as active_contracts, COUNT(CASE WHEN end_date <= NOW() + INTERVAL '60 days' AND end_date >= NOW() AND contract_status='active' THEN 1 END) as expiring_soon, SUM(elevators_under_contract) as total_elevators_contracted FROM contracts WHERE company_id=$1`, [companyId]);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'POST' && path === '/ai/score-results') {
+      const { results, buildingType, city, state } = JSON.parse(event.body || '{}');
+      const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+      const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+      const buildingList = results.map((r, i) =>
+        `${i+1}. ${r.name} - Rating: ${r.rating || 'N/A'}/5 | Google Types: ${(r.google_types || []).join(', ') || 'unknown'}`
+      ).join('\n');
+      const prompt = `You are an elevator service sales intelligence system. Analyze these ${results.length} buildings in ${city}, ${state} for "${buildingType}".\n\nEach result includes a google_types array from Google Places. Use it as your strongest signal:\n- If google_types includes "dentist", "doctor", "beauty_salon", "restaurant", "retail_store" → single business, NOT a building. Score 0-20.\n- If google_types includes "lodging", "hospital", "university", "shopping_mall", "apartment_complex" → confirmed building/facility. Score normally.\n- If google_types is empty or only "establishment" or "point_of_interest" → ambiguous, use name and context to judge.\n- If google_types is empty → treat as unknown, score lower than confirmed matches.\n\nThe buildingType field is what the user searched for. Use google_types to verify the match is legitimate.\n\nBuildings:\n${buildingList}\n\nReturn a JSON array with objects: index (0-based), should_import (true/false), ai_score (0-100), reason. Respond with ONLY a JSON array.`;
+      const resp = await bedrock.send(new InvokeModelCommand({ modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-opus-4-7', contentType: 'application/json', accept: 'application/json', body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }) }));
+      const text = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+      const scores = JSON.parse(text.replace(/```json|```/g, '').trim());
+      const scored = results.map((r, i) => { const s = scores.find(x => x.index === i) || {}; return { ...r, ai_score: s.ai_score || 50, ai_reason: s.reason, should_import: s.should_import !== false }; });
+      return respond(200, { results: scored });
+    }
+
+    if (method === 'POST' && path === '/ai/rescore-all') {
+      const { LambdaClient, InvokeCommand } = await import('@aws-sdk/client-lambda');
+      const lambda = new LambdaClient({ region: 'us-east-1' });
+      await lambda.send(new InvokeCommand({ FunctionName: 'smartlift-ai-scorer', InvocationType: 'Event', Payload: JSON.stringify({ rescore_all: true, company_id: companyId }) }));
+      return respond(200, { success: true, message: 'Rescoring started' });
+    }
+
+    if (method === 'GET' && path === '/profile') {
+      const result = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      return respond(200, result.rows[0] || {});
+    }
+
+    if (method === 'PATCH' && path === '/profile') {
+      const body = JSON.parse(event.body || '{}');
+      const { company_name, owner_name, email, phone, city, state, bio, tagline, service_area, years_in_business, tdlr_license, credentials, certifications, insurance_info } = body;
+      const existing = await pool.query('SELECT id FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      if (existing.rows.length) {
+        await pool.query(`UPDATE company_profile SET company_name=COALESCE($1,company_name), owner_name=COALESCE($2,owner_name), email=COALESCE($3,email), phone=COALESCE($4,phone), city=COALESCE($5,city), state=COALESCE($6,state), bio=COALESCE($7,bio), tagline=COALESCE($8,tagline), service_area=COALESCE($9,service_area), years_in_business=COALESCE($10,years_in_business), tdlr_license=COALESCE($11,tdlr_license), credentials=COALESCE($12,credentials), certifications=COALESCE($13,certifications), insurance_info=COALESCE($14,insurance_info), updated_at=NOW() WHERE company_id=$15`,
+          [company_name, owner_name, email, phone, city, state, bio, tagline, service_area, years_in_business, tdlr_license, credentials, certifications, insurance_info, companyId]);
+      } else {
+        await pool.query(`INSERT INTO company_profile (company_name, owner_name, email, phone, city, state, bio, tagline, service_area, years_in_business, tdlr_license, credentials, certifications, insurance_info, company_id, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW())`,
+          [company_name, owner_name, email, phone, city, state, bio, tagline, service_area, years_in_business, tdlr_license, credentials, certifications, insurance_info, companyId]);
+      }
+      const result = await pool.query('SELECT * FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'GET' && path === '/projects') {
+      const result = await pool.query('SELECT * FROM completed_projects WHERE company_id=$1 ORDER BY created_at DESC', [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/projects') {
+      const { title, description, location, year, elevators } = JSON.parse(event.body || '{}');
+      const result = await pool.query('INSERT INTO completed_projects (title, description, location, year, elevators, company_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING *', [title, description, location, year, elevators, companyId]);
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'DELETE' && path.match(/^\/projects\/\d+$/)) {
+      const id = path.split('/')[2];
+      await pool.query('DELETE FROM completed_projects WHERE id=$1 AND company_id=$2', [id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    // GET /technicians
+    // ==================== NOTIFICATIONS ====================
+
+    if (method === 'GET' && path === '/notifications') {
+      const result = await pool.query(
+        'SELECT * FROM notifications WHERE company_id=$1 ORDER BY created_at DESC LIMIT 50',
+        [companyId]
+      );
+      const unread = await pool.query(
+        'SELECT COUNT(*) FROM notifications WHERE company_id=$1 AND read=false',
+        [companyId]
+      );
+      return respond(200, { notifications: result.rows, unread: parseInt(unread.rows[0].count) });
+    }
+
+    if (method === 'PATCH' && path === '/notifications/read-all') {
+      await pool.query('UPDATE notifications SET read=true WHERE company_id=$1', [companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'PATCH' && path.match(/^[/]notifications[/]\d+[/]read$/)) {
+      const id = path.split('/')[2];
+      await pool.query('UPDATE notifications SET read=true WHERE id=$1 AND company_id=$2', [id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    // ==================== DOCUMENTS ====================
+
+    if (method === 'GET' && path === '/documents') {
+      const { customer_id, category } = event.queryStringParameters || {};
+      let query = `SELECT d.*, c.company_name as customer_name 
+        FROM documents d LEFT JOIN customers c ON c.id = d.customer_id
+        WHERE d.company_id = $1`;
+      const params = [companyId];
+      if (customer_id) { query += ` AND d.customer_id = $${params.length + 1}`; params.push(customer_id); }
+      if (category) { query += ` AND d.category = $${params.length + 1}`; params.push(category); }
+      query += ' ORDER BY d.created_at DESC';
+      const result = await pool.query(query, params);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/documents') {
+      const { customer_id, prospect_id, name, document_type, category, file_url, file_size, mime_type, notes, expiration_date } = JSON.parse(event.body || '{}');
+      if (!name) return respond(400, { error: 'name required' });
+      const result = await pool.query(
+        'INSERT INTO documents (company_id, customer_id, prospect_id, name, title, document_type, category, file_url, file_size, mime_type, notes, expiration_date, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) RETURNING *',
+        [companyId, customer_id||null, prospect_id||null, name, document_type||'general', category||'general', file_url||null, file_size||null, mime_type||null, notes||null, expiration_date||null, userId||'system']
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'DELETE' && path.match(/^[/]documents[/]\d+$/)) {
+      const id = path.split('/')[2];
+      await pool.query('DELETE FROM documents WHERE id=$1 AND company_id=$2', [id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    // ==================== MAINTENANCE SCHEDULES ====================
+
+    if (method === 'GET' && path === '/maintenance-schedules') {
+      const result = await pool.query(`
+        SELECT ms.*, c.company_name as customer_name, e.elevator_identifier,
+          t.name as technician_name
+        FROM maintenance_schedules ms
+        LEFT JOIN customers c ON c.id = ms.customer_id
+        LEFT JOIN elevators e ON e.id = ms.elevator_id
+        LEFT JOIN technicians t ON t.id = ms.assigned_technician_id
+        WHERE ms.company_id = $1 AND ms.status = 'active'
+        ORDER BY ms.next_due_date ASC
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/maintenance-schedules') {
+      const { customer_id, elevator_id, schedule_type, frequency, last_service_date, next_due_date, assigned_technician_id, notes } = JSON.parse(event.body || '{}');
+      if (!schedule_type || !frequency) return respond(400, { error: 'schedule_type and frequency required' });
+      const result = await pool.query(
+        'INSERT INTO maintenance_schedules (company_id, customer_id, elevator_id, schedule_type, frequency, last_service_date, next_due_date, assigned_technician_id, notes, status, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()) RETURNING *',
+        [companyId, customer_id||null, elevator_id||null, schedule_type, frequency, last_service_date||null, next_due_date||null, assigned_technician_id||null, notes||null, 'active']
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^[/]maintenance-schedules[/]\d+$/)) {
+      const id = path.split('/')[2];
+      const body = JSON.parse(event.body || '{}');
+      const fields = [];
+      const vals = [];
+      let idx = 1;
+      const allowed = ['schedule_type','frequency','last_service_date','next_due_date','assigned_technician_id','notes','status'];
+      for (const key of allowed) {
+        if (body[key] !== undefined) { fields.push(key + '=$' + idx++); vals.push(body[key]); }
+      }
+      fields.push('updated_at=NOW()');
+      vals.push(id, companyId);
+      const result = await pool.query('UPDATE maintenance_schedules SET ' + fields.join(',') + ' WHERE id=$' + idx++ + ' AND company_id=$' + idx + ' RETURNING *', vals);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'DELETE' && path.match(/^[/]maintenance-schedules[/]\d+$/)) {
+      const id = path.split('/')[2];
+      await pool.query('UPDATE maintenance_schedules SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3', ['inactive', id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    // ==================== INVOICES ====================
+
+    if (method === 'GET' && path === '/invoices') {
+      const result = await pool.query(`
+        SELECT i.*, c.company_name as customer_name, c.primary_contact_email
+        FROM invoices i
+        LEFT JOIN customers c ON c.id = i.customer_id
+        WHERE i.company_id = $1
+        ORDER BY i.created_at DESC LIMIT 100
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/invoices') {
+      const { customer_id, service_ticket_id, line_items, notes, due_date } = JSON.parse(event.body || '{}');
+      if (!customer_id) return respond(400, { error: 'customer_id required' });
+      const count = await pool.query('SELECT COUNT(*) FROM invoices');
+      const invoiceNumber = 'INV-' + String(parseInt(count.rows[0].count) + 1).padStart(4, '0');
+      const items = Array.isArray(line_items) ? line_items : [];
+      const amount = items.reduce((sum, item) => sum + (parseFloat(item.rate || 0) * parseFloat(item.qty || 1)), 0);
+      const tax = amount * 0.0825;
+      const total = amount + tax;
+      const result = await pool.query(
+        'INSERT INTO invoices (company_id, customer_id, service_ticket_id, invoice_number, line_items, amount, tax, total, status, due_date, notes, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW()) RETURNING *',
+        [companyId, customer_id, service_ticket_id||null, invoiceNumber, JSON.stringify(items), amount.toFixed(2), tax.toFixed(2), total.toFixed(2), 'pending', due_date||null, notes||null]
+      );
+      await logActivity(pool, companyId, null, 'invoice_created', 'invoice', result.rows[0].id, { invoice_number: invoiceNumber, total });
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^[/]invoices[/]\d+$/)) {
+      const id = path.split('/')[2];
+      const { status, paid_date, notes } = JSON.parse(event.body || '{}');
+      const result = await pool.query(
+        'UPDATE invoices SET status=COALESCE($1,status), paid_date=COALESCE($2,paid_date), notes=COALESCE($3,notes), updated_at=NOW() WHERE id=$4 AND company_id=$5 RETURNING *',
+        [status, paid_date, notes, id, companyId]
+      );
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'POST' && path === '/invoices/generate') {
+      const { work_order_id } = JSON.parse(event.body || '{}');
+      if (!work_order_id) return respond(400, { error: 'work_order_id required' });
+      const woResult = await pool.query(`
+        SELECT st.*, c.company_name, c.primary_contact_email, c.primary_contact_name,
+          ml.service_type, ml.work_performed, ml.cost, ml.technician_name, ml.parts_replaced
+        FROM service_tickets st
+        LEFT JOIN customers c ON c.id = st.customer_id
+        LEFT JOIN maintenance_logs ml ON ml.service_ticket_id = st.id
+        WHERE st.id = $1 AND st.company_id = $2
+      `, [work_order_id, companyId]);
+      if (!woResult.rows.length) return respond(404, { error: 'Work order not found' });
+      const wo = woResult.rows[0];
+      const count = await pool.query('SELECT COUNT(*) FROM invoices');
+      const invoiceNumber = 'INV-' + String(parseInt(count.rows[0].count) + 1).padStart(4, '0');
+      const laborCost = parseFloat(wo.cost || 0);
+      const items = [
+        { description: wo.service_type || 'Elevator Service', qty: 1, rate: laborCost, amount: laborCost }
+      ];
+      const tax = laborCost * 0.0825;
+      const total = laborCost + tax;
+      const dueDate = new Date(); dueDate.setDate(dueDate.getDate() + 30);
+      const result = await pool.query(
+        'INSERT INTO invoices (company_id, customer_id, service_ticket_id, invoice_number, line_items, amount, tax, total, status, due_date, notes, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW()) RETURNING *',
+        [companyId, wo.customer_id, work_order_id, invoiceNumber, JSON.stringify(items), laborCost.toFixed(2), tax.toFixed(2), total.toFixed(2), 'pending', dueDate.toISOString().split('T')[0], 'Auto-generated from Work Order ' + (wo.ticket_number || work_order_id)]
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    // ==================== EQUIPMENT REGISTRY ====================
+
+    if (method === 'GET' && path === '/equipment') {
+      const result = await pool.query(`
+        SELECT e.*,
+          c.company_name as customer_name,
+          c.address as customer_address,
+          c.city as customer_city,
+          COUNT(ml.id)::int as total_services,
+          MAX(ml.service_date) as last_service_date,
+          MIN(ml.next_service_date) as next_service_date,
+          SUM(ml.cost)::numeric as total_maintenance_cost,
+          EXTRACT(YEAR FROM AGE(NOW(), e.install_date))::int as age_years
+        FROM elevators e
+        LEFT JOIN customers c ON c.id = e.customer_id
+        LEFT JOIN maintenance_logs ml ON ml.elevator_id = e.id
+        WHERE e.company_id = $1
+        GROUP BY e.id, c.company_name, c.address, c.city
+        ORDER BY e.risk_score DESC, e.install_date ASC
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/equipment') {
+      const { customer_id, elevator_identifier, manufacturer, model, serial_number, install_date, capacity_lbs, floors_served, status, tdlr_certificate_number, last_inspection_date, next_inspection_date, notes } = JSON.parse(event.body || '{}');
+      if (!customer_id || !elevator_identifier) return respond(400, { error: 'customer_id and elevator_identifier required' });
+      const installYear = install_date ? new Date().getFullYear() - new Date(install_date).getFullYear() : 0;
+      const riskScore = Math.min(100, installYear * 3 + (status === 'out_of_service' ? 30 : 0));
+      const result = await pool.query(
+        'INSERT INTO elevators (company_id, customer_id, elevator_identifier, manufacturer, model, serial_number, install_date, capacity_lbs, floors_served, status, tdlr_certificate_number, last_inspection_date, next_inspection_date, risk_score, notes, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW()) RETURNING *',
+        [companyId, customer_id, elevator_identifier, manufacturer||null, model||null, serial_number||null, install_date||null, capacity_lbs||null, floors_served||null, status||'operational', tdlr_certificate_number||null, last_inspection_date||null, next_inspection_date||null, riskScore, notes||null]
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^[/]equipment[/]\d+$/)) {
+      const id = path.split('/')[2];
+      const body = JSON.parse(event.body || '{}');
+      const installYear = body.install_date ? new Date().getFullYear() - new Date(body.install_date).getFullYear() : null;
+      const riskScore = installYear !== null ? Math.min(100, installYear * 3 + (body.status === 'out_of_service' ? 30 : 0)) : null;
+      const fields = [];
+      const vals = [];
+      let idx = 1;
+      const allowed = ['elevator_identifier','manufacturer','model','serial_number','install_date','capacity_lbs','floors_served','status','tdlr_certificate_number','last_inspection_date','next_inspection_date','notes','modernization_needed'];
+      for (const key of allowed) {
+        if (body[key] !== undefined) { fields.push(key + '=$' + idx++); vals.push(body[key]); }
+      }
+      if (riskScore !== null) { fields.push('risk_score=$' + idx++); vals.push(riskScore); }
+      fields.push('updated_at=NOW()');
+      vals.push(id, companyId);
+      const result = await pool.query('UPDATE elevators SET ' + fields.join(',') + ' WHERE id=$' + idx++ + ' AND company_id=$' + idx + ' RETURNING *', vals);
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'GET' && path === '/technicians') {
+      const result = await pool.query(
+        'SELECT * FROM technicians WHERE company_id=$1 ORDER BY name ASC',
+        [companyId]
+      );
+      return respond(200, result.rows);
+    }
+
+    // POST /technicians
+    if (method === 'POST' && path === '/technicians') {
+      const { name, email, phone, tdlr_license_number, certifications, specializations, status, hire_date, notes } = JSON.parse(event.body || '{}');
+      if (!name) return respond(400, { error: 'name required' });
+      const result = await pool.query(
+        'INSERT INTO technicians (company_id, name, email, phone, tdlr_license_number, certifications, specializations, status, hire_date, notes, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW()) RETURNING *',
+        [companyId, name, email||null, phone||null, tdlr_license_number||null, certifications||[], specializations||[], status||'active', hire_date||null, notes||null]
+      );
+      return respond(201, result.rows[0]);
+    }
+
+    // PATCH /technicians/:id
+    if (method === 'PATCH' && path.match(/^[/]technicians[/]\d+$/)) {
+      const id = path.split('/')[2];
+      const { name, email, phone, tdlr_license_number, certifications, specializations, status, hire_date, notes } = JSON.parse(event.body || '{}');
+      const result = await pool.query(
+        'UPDATE technicians SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone), tdlr_license_number=COALESCE($4,tdlr_license_number), certifications=COALESCE($5,certifications), specializations=COALESCE($6,specializations), status=COALESCE($7,status), hire_date=COALESCE($8,hire_date), notes=COALESCE($9,notes), updated_at=NOW() WHERE id=$10 AND company_id=$11 RETURNING *',
+        [name, email, phone, tdlr_license_number, certifications, specializations, status, hire_date, notes, id, companyId]
+      );
+      return respond(200, result.rows[0]);
+    }
+
+    // DELETE /technicians/:id
+    if (method === 'DELETE' && path.match(/^[/]technicians[/]\d+$/)) {
+      const id = path.split('/')[2];
+      await pool.query('UPDATE technicians SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3', ['inactive', id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path === '/elevators') {
+      const result = await pool.query(`
+        SELECT e.*, c.company_name as customer_name,
+          ml.service_date as last_service_date,
+          ml.next_service_date,
+          ml.technician_name as last_technician
+        FROM elevators e
+        LEFT JOIN customers c ON c.id = e.customer_id
+        LEFT JOIN LATERAL (
+          SELECT * FROM maintenance_logs WHERE elevator_id = e.id ORDER BY service_date DESC LIMIT 1
+        ) ml ON true
+        WHERE e.company_id = $1
+        ORDER BY e.elevator_identifier
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/tickets') {
+      const { elevator_id, title, description, priority, reported_by, customer_id } = JSON.parse(event.body || '{}');
+      if (!title) return respond(400, { error: 'title required' });
+      const count = await pool.query('SELECT COUNT(*) FROM service_tickets');
+      const ticketNumber = 'SR-' + String(parseInt(count.rows[0].count) + 1).padStart(4, '0');
+      const result = await pool.query(
+        'INSERT INTO service_tickets (elevator_id, customer_id, ticket_number, title, description, priority, status, reported_by, company_id, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW()) RETURNING *',
+        [elevator_id||null, customer_id||null, ticketNumber, title, description, priority||'medium', 'open', reported_by||null, companyId]
+      );
+      // Create notification for new service request
+      try {
+        const ticketData = result.rows[0];
+        const notifTitle = ticketData.priority === 'emergency'
+          ? '🚨 Emergency Service Request'
+          : '🔔 New Service Request';
+        const notifMsg = `${ticketData.ticket_number || 'New ticket'}: ${ticketData.title} — Priority: ${(ticketData.priority || 'medium').toUpperCase()}`;
+        await pool.query(
+          'INSERT INTO notifications (company_id, type, title, message, link, created_at) VALUES ($1,$2,$3,$4,$5,NOW())',
+          [companyId, ticketData.priority === 'emergency' ? 'emergency' : 'service_request', notifTitle, notifMsg, '/internal/work-orders']
+        );
+      } catch(ne) { console.log('Notification error:', ne.message); }
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'GET' && path === '/tickets') {
+      const result = await pool.query(`SELECT st.*, c.company_name as customer_name, e.elevator_identifier FROM service_tickets st LEFT JOIN customers c ON c.id = st.customer_id LEFT JOIN elevators e ON e.id = st.elevator_id WHERE st.company_id = $1 ORDER BY CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, st.created_at DESC`, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'GET' && path === '/maintenance') {
+      const result = await pool.query(`SELECT ml.*, e.elevator_identifier, c.company_name as customer_name FROM maintenance_logs ml LEFT JOIN elevators e ON e.id = ml.elevator_id LEFT JOIN customers c ON c.id = e.customer_id WHERE ml.company_id = $1 ORDER BY ml.service_date DESC LIMIT 100`, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'GET' && path === '/invoices') {
+      const result = await pool.query('SELECT * FROM invoices WHERE company_id=$1 ORDER BY created_at DESC LIMIT 50', [companyId]);
+      return respond(200, result.rows);
+    }
+
+    // Admin endpoint - get all companies (for your admin dashboard)
+    if (method === 'GET' && path === '/admin/companies') {
+      const result = await pool.query(`
+        SELECT c.*, 
+          COUNT(DISTINCT p.id) as prospect_count,
+          COUNT(DISTINCT cu.id) as customer_count,
+          COUNT(DISTINCT co.id) as contract_count,
+          SUM(co.monthly_value) as mrr
+        FROM companies c
+        LEFT JOIN prospects p ON p.company_id = c.id
+        LEFT JOIN customers cu ON cu.company_id = c.id  
+        LEFT JOIN contracts co ON co.company_id = c.id
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+      `);
+      return respond(200, result.rows);
+    }
+
+    // Get activity log for a company
+    if (method === 'GET' && path === '/admin/activity') {
+      const result = await pool.query(`
+        SELECT * FROM activity_log 
+        WHERE company_id = $1
+        ORDER BY created_at DESC LIMIT 50
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
+    if (method === 'GET' && path === '/work-orders') {
+      // Technicians only see work orders assigned to them by name
+      // Owners and sales see all work orders for the company
+      const baseQuery = `
+        SELECT st.*, c.company_name as customer_name, e.elevator_identifier
+        FROM service_tickets st
+        LEFT JOIN customers c ON c.id = st.customer_id
+        LEFT JOIN elevators e ON e.id = st.elevator_id
+        WHERE st.company_id = $1
+      `;
+      const orderBy = `
+        ORDER BY
+          CASE st.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END,
+          CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+          st.created_at DESC
+      `;
+
+      const userSub = getUserSub(event);
+      const isTechnician = getUserRole(event) === 'technician';
+      let result;
+      if (isTechnician) {
+        // Get technician's name from preferences or email claim
+        const claims = event.requestContext?.authorizer?.jwt?.claims
+          || event.requestContext?.authorizer?.claims || {};
+        const techEmail = claims.email || '';
+        const prefResult = await pool.query(
+          'SELECT display_name FROM user_preferences WHERE cognito_sub=$1 AND company_id=$2',
+          [userSub, companyId]
+        );
+        const techName = prefResult.rows[0]?.display_name || techEmail.split('@')[0];
+        result = await pool.query(
+          baseQuery + ` AND (LOWER(st.assigned_technician) LIKE LOWER($2) OR LOWER(st.assigned_technician) LIKE LOWER($3))` + orderBy,
+          [companyId, '%' + techName + '%', '%' + techEmail.split('@')[0] + '%']
+        );
+      } else {
+        result = await pool.query(baseQuery + orderBy, [companyId]);
+      }
+      return respond(200, result.rows);
+    }
+
+    if (method === 'POST' && path === '/work-orders') {
+      const { customer_id, elevator_id, title, description, priority, status, assigned_technician, scheduled_date, reported_by } = JSON.parse(event.body || '{}');
+      if (!title || !customer_id) return respond(400, { error: 'title and customer_id required' });
+      const count = await pool.query('SELECT COUNT(*) FROM service_tickets');
+      const ticketNumber = 'WO-' + String(parseInt(count.rows[0].count) + 1).padStart(4, '0');
+      const result = await pool.query('INSERT INTO service_tickets (customer_id, elevator_id, ticket_number, title, description, priority, status, assigned_technician, scheduled_date, reported_by, company_id, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW()) RETURNING *',
+        [customer_id, elevator_id||null, ticketNumber, title, description, priority||'medium', status||'open', assigned_technician||null, scheduled_date||null, reported_by||null, companyId]);
+      // Send notification to technician if assigned
+      if (assigned_technician) {
+        const techResult = await pool.query('SELECT * FROM technicians WHERE name=$1 AND company_id=$2 AND email IS NOT NULL LIMIT 1', [assigned_technician, companyId]);
+        if (techResult.rows.length > 0 && techResult.rows[0].email) {
+          const tech = techResult.rows[0];
+          const scheduledStr = scheduled_date ? new Date(scheduled_date).toLocaleString('en-US', { timeZone: 'America/Chicago', dateStyle: 'full', timeStyle: 'short' }) : 'To be scheduled';
+          await sendEmail(
+            tech.email,
+            'New Work Order Assigned — ' + title,
+            'Hi ' + tech.name + ',\n\nYou have been assigned a new work order:\n\n' +
+            'Work Order: ' + result.rows[0].ticket_number + '\n' +
+            'Title: ' + title + '\n' +
+            'Priority: ' + (priority || 'medium').toUpperCase() + '\n' +
+            'Scheduled: ' + scheduledStr + '\n\n' +
+            (description ? 'Description:\n' + description + '\n\n' : '') +
+            'Please log into Smarterlift for full details.\n\n' +
+            'Southwest Cabs Elevator Services'
+          );
+        }
+      }
+      return respond(201, result.rows[0]);
+    }
+
+    if (method === 'PATCH' && path.match(/^[/]work-orders[/]\d+$/)) {
+      const id = path.split('/')[2];
+      const { status, assigned_technician, scheduled_date, priority, resolution_notes } = JSON.parse(event.body || '{}');
+      const fields = [];
+      const vals = [];
+      let idx = 1;
+      if (status) { fields.push('status=$' + idx++); vals.push(status); }
+      if (assigned_technician) { fields.push('assigned_technician=$' + idx++); vals.push(assigned_technician); }
+      if (scheduled_date) { fields.push('scheduled_date=$' + idx++); vals.push(scheduled_date); }
+      if (priority) { fields.push('priority=$' + idx++); vals.push(priority); }
+      if (resolution_notes) { fields.push('resolution_notes=$' + idx++); vals.push(resolution_notes); }
+      if (status === 'completed') { fields.push('completed_date=NOW()'); }
+      fields.push('updated_at=NOW()');
+      vals.push(id, companyId);
+      const result = await pool.query('UPDATE service_tickets SET ' + fields.join(',') + ' WHERE id=$' + idx++ + ' AND company_id=$' + idx + ' RETURNING *', vals);
+      // Notify technician if newly assigned
+      if (assigned_technician && result.rows[0]) {
+        const techResult = await pool.query('SELECT * FROM technicians WHERE name=$1 AND company_id=$2 AND email IS NOT NULL LIMIT 1', [assigned_technician, companyId]);
+        if (techResult.rows.length > 0 && techResult.rows[0].email) {
+          const tech = techResult.rows[0];
+          await sendEmail(
+            tech.email,
+            'Work Order Update — ' + result.rows[0].title,
+            'Hi ' + tech.name + ',\n\nA work order has been updated and assigned to you:\n\n' +
+            'Work Order: ' + result.rows[0].ticket_number + '\n' +
+            'Title: ' + result.rows[0].title + '\n' +
+            'Status: ' + (status || result.rows[0].status) + '\n' +
+            'Priority: ' + result.rows[0].priority.toUpperCase() + '\n\n' +
+            'Please log into Smarterlift for full details.\n\n' +
+            'Southwest Cabs Elevator Services'
+          );
+        }
+      }
+      return respond(200, result.rows[0]);
+    }
+
+    if (method === 'POST' && path.match(/^[/]work-orders[/]\d+[/]log$/)) {
+      const id = path.split('/')[2];
+      const { elevator_id, service_type, technician_name, work_performed, parts_replaced, next_service_date, cost } = JSON.parse(event.body || '{}');
+      const parts = parts_replaced ? parts_replaced.split(',').map(p => p.trim()).filter(Boolean) : [];
+      await pool.query('INSERT INTO maintenance_logs (elevator_id, service_ticket_id, service_type, technician_name, work_performed, parts_replaced, next_service_date, cost, company_id, service_date, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())',
+        [elevator_id||null, id, service_type, technician_name, work_performed, JSON.stringify(parts), next_service_date||null, cost||0, companyId]);
+      await pool.query("UPDATE service_tickets SET status='completed', completed_date=NOW(), updated_at=NOW() WHERE id=$1 AND company_id=$2", [id, companyId]);
+      return respond(200, { success: true });
+    }
+
+    if (method === 'GET' && path.match(/^[/]customers[/]\d+[/]elevators$/)) {
+      const id = path.split('/')[2];
+      const result = await pool.query('SELECT * FROM elevators WHERE customer_id=$1 AND company_id=$2 ORDER BY elevator_identifier', [id, companyId]);
+      return respond(200, result.rows);
+    }
+
+
+
+    // GET /me — identity, role, preferences — called on every login
+    if (method === 'GET' && path === '/me') {
+      const sub = getUserSub(event);
+      const role = getUserRole(event);
+      if (!sub) return respond(401, { error: 'Unauthorized' });
+      const jwtPayload = decodeJWT(event);
+      const email = jwtPayload.email || jwtPayload['cognito:username'] || null;
+      const name = jwtPayload.name || jwtPayload['custom:name'] || email || null;
+      const result = await pool.query(`
+        INSERT INTO user_preferences (company_id, cognito_sub, email, display_name, last_active)
+        VALUES ($1,$2,$3,$4,NOW())
+        ON CONFLICT (cognito_sub) DO UPDATE
+          SET last_active=NOW(),
+              email=COALESCE(EXCLUDED.email, user_preferences.email)
+        RETURNING *
+      `, [companyId, sub, email, name]);
+      return respond(200, { ...result.rows[0], role, email, name, company_id: companyId });
+    }
+
+    // GET /me/preferences — load this user's saved preferences
+    if (method === 'GET' && path === '/me/preferences') {
+      const sub = getUserSub(event);
+      if (!sub) return respond(400, { error: 'No user identity found' });
+
+      // Upsert — create record if first time this user logs in
+      const result = await pool.query(`
+        INSERT INTO user_preferences (company_id, cognito_sub, email, last_active)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (cognito_sub) DO UPDATE
+          SET last_active = NOW(),
+              email = COALESCE(EXCLUDED.email, user_preferences.email)
+        RETURNING *
+      `, [companyId, sub, (decodeJWT(event).email) || null]);
+
+      return respond(200, result.rows[0]);
+    }
+
+    // PATCH /me/preferences — save a preference key/value
+    if (method === 'PATCH' && path === '/me/preferences') {
+      const sub = getUserSub(event);
+      if (!sub) return respond(400, { error: 'No user identity found' });
+
+      const body = JSON.parse(event.body || '{}');
+      const { key, value, display_name } = body;
+
+      // Update display name if provided
+      if (display_name) {
+        await pool.query(
+          'UPDATE user_preferences SET display_name=$1, last_active=NOW() WHERE cognito_sub=$2',
+          [display_name, sub]
+        );
+      }
+
+      // Merge new preference into existing JSONB — never wipes other keys
+      if (key !== undefined && value !== undefined) {
+        await pool.query(`
+          INSERT INTO user_preferences (company_id, cognito_sub, preferences, last_active)
+          VALUES ($1, $2, $3::jsonb, NOW())
+          ON CONFLICT (cognito_sub) DO UPDATE
+            SET preferences = user_preferences.preferences || $3::jsonb,
+                last_active = NOW()
+        `, [companyId, sub, JSON.stringify({ [key]: value })]);
+      }
+
+      const result = await pool.query(
+        'SELECT * FROM user_preferences WHERE cognito_sub=$1', [sub]
+      );
+      return respond(200, result.rows[0]);
+    }
+
+    // PATCH /me/preferences/bulk — save multiple preferences at once
+    if (method === 'PATCH' && path === '/me/preferences/bulk') {
+      const sub = getUserSub(event);
+      if (!sub) return respond(400, { error: 'No user identity found' });
+
+      const body = JSON.parse(event.body || '{}');
+      const { preferences } = body;
+      if (!preferences || typeof preferences !== 'object') {
+        return respond(400, { error: 'preferences object required' });
+      }
+
+      await pool.query(`
+        INSERT INTO user_preferences (company_id, cognito_sub, preferences, last_active)
+        VALUES ($1, $2, $3::jsonb, NOW())
+        ON CONFLICT (cognito_sub) DO UPDATE
+          SET preferences = user_preferences.preferences || $3::jsonb,
+              last_active = NOW()
+      `, [companyId, sub, JSON.stringify(preferences)]);
+
+      const result = await pool.query(
+        'SELECT * FROM user_preferences WHERE cognito_sub=$1', [sub]
+      );
+      return respond(200, result.rows[0]);
+    }
+
+
+    // GET /team/users — list all Cognito users for this company
+    if (method === 'GET' && path === '/team/users') {
+      const role = getUserRole(event);
+      if (!['owner'].includes(role)) return respond(403, { error: 'Owner access required' });
+
+      const cmd = new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 });
+      const res = await cognitoClient.send(cmd);
+
+      const users = await Promise.all((res.Users || []).map(async u => {
+        const attr = {};
+        (u.Attributes || []).forEach(a => { attr[a.Name] = a.Value; });
+        const groupRes = await cognitoClient.send(new AdminListGroupsForUserCommand({
+          UserPoolId: USER_POOL_ID, Username: u.Username
+        }));
+        const groups = (groupRes.Groups || []).map(g => g.GroupName);
+        const role = groups.includes('Owners') ? 'owner'
+          : groups.includes('Technicians') ? 'technician'
+          : groups.includes('SalesOffice') ? 'sales'
+          : groups.includes('Customers') ? 'customer'
+          : 'staff';
+        return {
+          sub: attr.sub,
+          email: attr.email || u.Username,
+          name: attr.name || attr.email || u.Username,
+          status: u.UserStatus,
+          enabled: u.Enabled,
+          created: u.UserCreateDate,
+          groups,
+          role,
+        };
+      }));
+
+      return respond(200, users);
+    }
+
+    // POST /team/users/invite — invite a new user
+    if (method === 'POST' && path === '/team/users/invite') {
+      const role = getUserRole(event);
+      if (!['owner'].includes(role)) return respond(403, { error: 'Owner access required' });
+
+      const { email, name, userRole } = JSON.parse(event.body || '{}');
+      if (!email) return respond(400, { error: 'email required' });
+
+      // Create Cognito user — sends temp password email
+      await cognitoClient.send(new AdminCreateUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: email,
+        UserAttributes: [
+          { Name: 'email', Value: email },
+          { Name: 'email_verified', Value: 'true' },
+          ...(name ? [{ Name: 'name', Value: name }] : []),
+        ],
+        DesiredDeliveryMediums: ['EMAIL'],
+      }));
+
+      // Add to CompanyUsers by default
+      await cognitoClient.send(new AdminAddUserToGroupCommand({
+        UserPoolId: USER_POOL_ID, Username: email, GroupName: 'CompanyUsers'
+      }));
+
+      // Add to role group if specified
+      const groupMap = { owner: 'Owners', technician: 'Technicians', sales: 'SalesOffice' };
+      if (userRole && groupMap[userRole]) {
+        await cognitoClient.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID, Username: email, GroupName: groupMap[userRole]
+        }));
+      }
+
+      return respond(201, { success: true, email, role: userRole || 'staff' });
+    }
+
+    // PATCH /team/users/:sub/role — change a user's role
+    if (method === 'PATCH' && path.match(/^\/team\/users\/[^/]+\/role$/)) {
+      const callerRole = getUserRole(event);
+      if (!['owner'].includes(callerRole)) return respond(403, { error: 'Owner access required' });
+
+      const username = path.split('/')[3];
+      const { role: newRole } = JSON.parse(event.body || '{}');
+      const groupMap = { owner: 'Owners', technician: 'Technicians', sales: 'SalesOffice' };
+
+      // Remove from all role groups first
+      for (const grp of ROLE_GROUPS) {
+        try {
+          await cognitoClient.send(new AdminRemoveUserFromGroupCommand({
+            UserPoolId: USER_POOL_ID, Username: username, GroupName: grp
+          }));
+        } catch(e) { /* not in group — ok */ }
+      }
+
+      // Add to new role group
+      if (newRole && groupMap[newRole]) {
+        await cognitoClient.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID, Username: username, GroupName: groupMap[newRole]
+        }));
+      }
+
+      return respond(200, { success: true, role: newRole || 'staff' });
+    }
+
+    // PATCH /team/users/:sub/status — enable or disable a user
+    if (method === 'PATCH' && path.match(/^\/team\/users\/[^/]+\/status$/)) {
+      const callerRole = getUserRole(event);
+      if (!['owner'].includes(callerRole)) return respond(403, { error: 'Owner access required' });
+
+      const username = path.split('/')[3];
+      const { enabled } = JSON.parse(event.body || '{}');
+
+      if (enabled) {
+        await cognitoClient.send(new AdminEnableUserCommand({
+          UserPoolId: USER_POOL_ID, Username: username
+        }));
+      } else {
+        await cognitoClient.send(new AdminDisableUserCommand({
+          UserPoolId: USER_POOL_ID, Username: username
+        }));
+      }
+
+      return respond(200, { success: true, enabled });
+    }
+
+    if (method === 'POST' && path === '/lead-search/qualify-office-results') {
+      const { results } = JSON.parse(event.body || '{}');
+      if (!results?.length) return respond(200, { results: [] });
+      const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+      const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
+      const list = results.map((r, i) =>
+        `${i+1}. ${r.name} | Types: ${(r.types || []).join(', ') || 'unknown'} | Address: ${r.formattedAddress || 'N/A'}`
+      ).join('\n');
+      const prompt = `You are filtering search results for an elevator service sales team. They want to find CORPORATE OFFICE TOWERS — buildings with 4+ floors, multiple tenants, NOT small single-business offices.\n\nFor each result, return { keep: true/false, reason: "..." }.\n\nKEEP (return true) for:\n- Multi-tenant office towers\n- Corporate headquarters buildings\n- Business centers with multiple tenants\n- Named office towers ("One Main Place", "Bank of America Tower", "Renaissance Tower")\n\nEXCLUDE (return false) for:\n- Dentists, dental practices, oral surgeons\n- Medical offices, doctor offices, clinics\n- Law firms in small buildings\n- Accounting firms, solo CPAs\n- Insurance agents, real estate offices\n- Restaurants, retail stores, salons\n- Single-family residences\n- Parking garages\n- Buildings whose names suggest residential, retail, or single-service\n\nUse name + types array. If name includes "Dental", "Dentistry", "Medical", "Clinic", "Salon", "Restaurant", "Law Offices", "Agency" → EXCLUDE.\n\nBuildings:\n${list}\n\nReturn ONLY a JSON array (one entry per building, in order): [{ "keep": true, "reason": "Named office tower" }, ...]. No other text.`;
+      const resp = await bedrock.send(new InvokeModelCommand({ modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-opus-4-7', contentType: 'application/json', accept: 'application/json', body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }) }));
+      const text = JSON.parse(new TextDecoder().decode(resp.body)).content[0].text;
+      const qualResults = JSON.parse(text.replace(/```json|```/g, '').trim());
+      return respond(200, { results: qualResults });
+    }
+
+    return respondTo(event, 404, { error: 'Not found', path, method });
+
+  } catch (error) {
+    return internalError(event, error);
+  }
+};

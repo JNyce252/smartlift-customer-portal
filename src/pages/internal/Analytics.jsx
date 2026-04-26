@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { TrendingUp, DollarSign, Clock, Users, ArrowUp, Building2, CheckCircle, Brain, AlertTriangle, Star, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -18,7 +19,7 @@ const Analytics = () => {
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
-    const token = localStorage.getItem('smartlift_token');
+    const token = authService.getIdToken();
     const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
 
     Promise.all([
@@ -53,7 +54,7 @@ const Analytics = () => {
     setRescoring(true);
     setRescoreMsg('');
     try {
-      const token = localStorage.getItem('smartlift_token');
+      const token = authService.getIdToken();
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       await fetch(`${BASE_URL}/ai/rescore-all`, { method: 'POST', headers });
       setRescoreMsg('AI rescoring started — scores will update in ~2 minutes');
