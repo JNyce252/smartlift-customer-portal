@@ -733,7 +733,8 @@ const ProspectDetails = () => {
                 <button onClick={async () => {
                   setProposalLoading(true);
                   try {
-                    const h = { "Content-Type": "application/json", Authorization: "Bearer " + authService.getIdToken() };
+                    const t = authService.getIdToken();
+                    const h = { "Content-Type": "application/json", ...(t && { Authorization: "Bearer " + t }) };
                     const BASE = process.env.REACT_APP_API_BASE_URL || "https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod";
                     await fetch(BASE + "/prospects/" + id + "/score", { method: "POST", headers: h, body: JSON.stringify({ prospect_id: id }) });
                     setTimeout(() => window.location.reload(), 4000);

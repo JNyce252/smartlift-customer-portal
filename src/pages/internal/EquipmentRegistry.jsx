@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Building2, Plus, X, Search, AlertTriangle, CheckCircle, Wrench, Calendar, Hash, Layers, ArrowUpDown, Shield, TrendingUp, Edit2 , Download } from 'lucide-react';
 import { exportEquipmentCSV } from '../../utils/csvExport';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -41,16 +41,13 @@ const EquipmentRegistry = () => {
     modernization_needed: false
   });
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchData = async () => {
     try {
       const [equip, cust] = await Promise.all([
-        fetch(BASE_URL + '/equipment', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
+        fetch(BASE_URL + '/equipment', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/customers', { headers: authHeaders() }).then(r => r.json()),
       ]);
       setEquipment(Array.isArray(equip) ? equip : []);
       setCustomers(Array.isArray(cust) ? cust : []);
@@ -65,7 +62,7 @@ const EquipmentRegistry = () => {
     setSaving(true);
     try {
       const res = await fetch(BASE_URL + '/equipment', {
-        method: 'POST', headers, body: JSON.stringify(form)
+        method: 'POST', headers: authHeaders(), body: JSON.stringify(form)
       });
       const data = await res.json();
       setEquipment(prev => [...prev, data]);
@@ -78,7 +75,7 @@ const EquipmentRegistry = () => {
   const updateEquipment = async (id, updates) => {
     try {
       const res = await fetch(BASE_URL + '/equipment/' + id, {
-        method: 'PATCH', headers, body: JSON.stringify(updates)
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify(updates)
       });
       const data = await res.json();
       setEquipment(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));

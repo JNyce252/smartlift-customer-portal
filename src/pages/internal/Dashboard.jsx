@@ -45,13 +45,14 @@ const Dashboard = () => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const authData = localStorage.getItem('smartlift_auth');
-  const token = authData ? JSON.parse(authData)?.token : authService.getIdToken();
-  const headers = { Authorization: `Bearer ${token}` };
-
   useEffect(() => {
     savePreference('last_dashboard_visit', new Date().toISOString());
     const load = async () => {
+      // Build headers inside the effect so we read the freshest token after
+      // login completes. Use the ID token — that's what the Lambda decodes for
+      // company_id + role.
+      const token = authService.getIdToken();
+      const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) };
       try {
         const [prof, tdlrData, contractData, prospectsData, woData, invData] = await Promise.all([
           fetch(`${BASE_URL}/profile`, { headers }).then(r => r.json()).catch(() => ({})),

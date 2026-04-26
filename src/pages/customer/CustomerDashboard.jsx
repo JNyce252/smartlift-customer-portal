@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Wrench, FileText, DollarSign, ArrowUpDown, MessageSquare, Calendar, Clock, CheckCircle, LogOut, Phone, AlertCircle, ChevronRight, Shield, Bell, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
-import { authService } from '../../services/authService';
+import { authService, authHeaders } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -16,16 +16,12 @@ const CustomerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const headers = {
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
-
   useEffect(() => {
     Promise.all([
       api.getElevators().catch(() => []),
       api.getTickets().catch(() => []),
       api.getMaintenance().catch(() => []),
-      fetch(BASE_URL + '/profile', { headers }).then(r => r.json()).catch(() => ({})),
+      fetch(BASE_URL + '/profile', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
     ]).then(([elev, tick, maint, prof]) => {
       setElevators(Array.isArray(elev) ? elev : []);
       setTickets(Array.isArray(tick) ? tick : []);

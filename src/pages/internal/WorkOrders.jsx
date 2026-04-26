@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { generateWorkOrderPDF } from '../../utils/pdfGenerator';
 import { exportWorkOrdersCSV } from '../../utils/csvExport';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 // already imported from '../../utils/pdfGenerator';
 import { Building2, Wrench, Plus, X, Clock, CheckCircle, AlertTriangle, Search, Filter, ChevronDown, User, Calendar, Tool , Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -57,17 +57,14 @@ const WorkOrders = () => {
   const [savingLog, setSavingLog] = useState(false);
   const [technicians, setTechnicians] = useState([]);
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchData = async () => {
     try {
       const [wo, cust, techs] = await Promise.all([
-        fetch(BASE_URL + '/work-orders', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()).catch(() => []),
+        fetch(BASE_URL + '/work-orders', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/customers', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/technicians', { headers: authHeaders() }).then(r => r.json()).catch(() => []),
       ]);
       setWorkOrders(Array.isArray(wo) ? wo : []);
       setCustomers(Array.isArray(cust) ? cust : []);
@@ -81,7 +78,7 @@ const WorkOrders = () => {
   const fetchElevators = async (customerId) => {
     if (!customerId) return;
     try {
-      const data = await fetch(BASE_URL + '/customers/' + customerId + '/elevators', { headers }).then(r => r.json());
+      const data = await fetch(BASE_URL + '/customers/' + customerId + '/elevators', { headers: authHeaders() }).then(r => r.json());
       setElevators(Array.isArray(data) ? data : []);
     } catch(e) {}
   };
@@ -91,7 +88,7 @@ const WorkOrders = () => {
     setSaving(true);
     try {
       const res = await fetch(BASE_URL + '/work-orders', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify(form)
       });
       const data = await res.json();
@@ -105,7 +102,7 @@ const WorkOrders = () => {
   const updateStatus = async (id, status) => {
     try {
       await fetch(BASE_URL + '/work-orders/' + id, {
-        method: 'PATCH', headers,
+        method: 'PATCH', headers: authHeaders(),
         body: JSON.stringify({ status })
       });
       setWorkOrders(prev => prev.map(wo => wo.id === id ? { ...wo, status } : wo));
@@ -118,7 +115,7 @@ const WorkOrders = () => {
     setSavingLog(true);
     try {
       await fetch(BASE_URL + '/work-orders/' + showDetail.id + '/log', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ ...logForm, elevator_id: showDetail.elevator_id })
       });
       setLogForm({ service_type: '', technician_name: '', work_performed: '', parts_replaced: '', next_service_date: '', cost: '' });

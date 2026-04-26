@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, FileText, Plus, X, Search, Download, Trash2, Upload, Calendar, Tag, Eye, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -36,16 +36,13 @@ const Documents = () => {
     customer_id: '', file_url: '', notes: '', expiration_date: ''
   });
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchData = async () => {
     try {
       const [docs, cust] = await Promise.all([
-        fetch(BASE_URL + '/documents', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
+        fetch(BASE_URL + '/documents', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/customers', { headers: authHeaders() }).then(r => r.json()),
       ]);
       setDocuments(Array.isArray(docs) ? docs : []);
       setCustomers(Array.isArray(cust) ? cust : []);
@@ -60,7 +57,7 @@ const Documents = () => {
     setSaving(true);
     try {
       const res = await fetch(BASE_URL + '/documents', {
-        method: 'POST', headers, body: JSON.stringify(form)
+        method: 'POST', headers: authHeaders(), body: JSON.stringify(form)
       });
       const data = await res.json();
       setDocuments(prev => [data, ...prev]);
@@ -73,7 +70,7 @@ const Documents = () => {
   const deleteDocument = async (id) => {
     if (!window.confirm('Delete this document?')) return;
     try {
-      await fetch(BASE_URL + '/documents/' + id, { method: 'DELETE', headers });
+      await fetch(BASE_URL + '/documents/' + id, { method: 'DELETE', headers: authHeaders() });
       setDocuments(prev => prev.filter(d => d.id !== id));
     } catch(e) {}
   };

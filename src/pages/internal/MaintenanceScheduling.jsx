@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, Calendar, Plus, X, CheckCircle, AlertTriangle, Clock, Wrench, ChevronDown, ChevronUp, User, Repeat } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -56,17 +56,14 @@ const MaintenanceScheduling = () => {
     assigned_technician_id: '', notes: ''
   });
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchData = async () => {
     try {
       const [sched, cust, techs] = await Promise.all([
-        fetch(BASE_URL + '/maintenance-schedules', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()),
+        fetch(BASE_URL + '/maintenance-schedules', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/customers', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/technicians', { headers: authHeaders() }).then(r => r.json()),
       ]);
       setSchedules(Array.isArray(sched) ? sched : []);
       setCustomers(Array.isArray(cust) ? cust : []);
@@ -80,7 +77,7 @@ const MaintenanceScheduling = () => {
   const fetchElevators = async (customerId) => {
     if (!customerId) return;
     try {
-      const data = await fetch(BASE_URL + '/customers/' + customerId + '/elevators', { headers }).then(r => r.json());
+      const data = await fetch(BASE_URL + '/customers/' + customerId + '/elevators', { headers: authHeaders() }).then(r => r.json());
       setElevators(Array.isArray(data) ? data : []);
     } catch(e) {}
   };
@@ -99,7 +96,7 @@ const MaintenanceScheduling = () => {
     setSaving(true);
     try {
       const res = await fetch(BASE_URL + '/maintenance-schedules', {
-        method: 'POST', headers, body: JSON.stringify(form)
+        method: 'POST', headers: authHeaders(), body: JSON.stringify(form)
       });
       const data = await res.json();
       setSchedules(prev => [...prev, data]);
@@ -111,7 +108,7 @@ const MaintenanceScheduling = () => {
 
   const deleteSchedule = async (id) => {
     try {
-      await fetch(BASE_URL + '/maintenance-schedules/' + id, { method: 'DELETE', headers });
+      await fetch(BASE_URL + '/maintenance-schedules/' + id, { method: 'DELETE', headers: authHeaders() });
       setSchedules(prev => prev.filter(s => s.id !== id));
     } catch(e) {}
   };

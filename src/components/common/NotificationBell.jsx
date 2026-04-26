@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, X, CheckCheck, Wrench, AlertCircle, Calendar, FileText, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../../services/authService';
+import { authHeaders } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -32,14 +32,12 @@ const NotificationBell = () => {
   const ref = useRef(null);
   const navigate = useNavigate();
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
-
+  // Build headers per-call so we always read the freshest token after login.
+  // (Previously this was computed at component-mount and captured a stale or
+  // null token, sending Bearer null on every poll.)
   const fetchNotifications = async () => {
     try {
-      const res = await fetch(BASE_URL + '/notifications', { headers });
+      const res = await fetch(BASE_URL + '/notifications', { headers: authHeaders() });
       const data = await res.json();
       setNotifications(data.notifications || []);
       setUnread(data.unread || 0);
@@ -64,7 +62,7 @@ const NotificationBell = () => {
 
   const markAllRead = async () => {
     try {
-      await fetch(BASE_URL + '/notifications/read-all', { method: 'PATCH', headers });
+      await fetch(BASE_URL + '/notifications/read-all', { method: 'PATCH', headers: authHeaders() });
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnread(0);
     } catch(e) {}
@@ -72,7 +70,7 @@ const NotificationBell = () => {
 
   const markRead = async (id) => {
     try {
-      await fetch(BASE_URL + '/notifications/' + id + '/read', { method: 'PATCH', headers });
+      await fetch(BASE_URL + '/notifications/' + id + '/read', { method: 'PATCH', headers: authHeaders() });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setUnread(prev => Math.max(0, prev - 1));
     } catch(e) {}

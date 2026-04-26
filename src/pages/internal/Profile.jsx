@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, User, Phone, Mail, MapPin, Save, CheckCircle, Plus, Trash2, Briefcase, Wrench, Shield, Star, X, Edit2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -42,16 +42,13 @@ const Profile = () => {
     certifications: [], specializations: [], hire_date: '', notes: '', status: 'active'
   });
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   useEffect(() => {
     Promise.all([
-      fetch(BASE_URL + '/profile', { headers }).then(r => r.json()),
-      fetch(BASE_URL + '/projects', { headers }).then(r => r.json()).catch(() => []),
-      fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()).catch(() => []),
+      fetch(BASE_URL + '/profile', { headers: authHeaders() }).then(r => r.json()),
+      fetch(BASE_URL + '/projects', { headers: authHeaders() }).then(r => r.json()).catch(() => []),
+      fetch(BASE_URL + '/technicians', { headers: authHeaders() }).then(r => r.json()).catch(() => []),
     ]).then(([prof, proj, techs]) => {
       if (prof && !prof.error) setProfile(prof);
       setProjects(Array.isArray(proj) ? proj : []);
@@ -62,7 +59,7 @@ const Profile = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(BASE_URL + '/profile', { method: 'POST', headers, body: JSON.stringify(profile) });
+      await fetch(BASE_URL + '/profile', { method: 'POST', headers: authHeaders(), body: JSON.stringify(profile) });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch(e) { console.error(e); }
@@ -73,7 +70,7 @@ const Profile = () => {
     if (!newProject.building_name.trim()) return;
     setAddingProject(true);
     try {
-      const res = await fetch(BASE_URL + '/projects', { method: 'POST', headers, body: JSON.stringify(newProject) });
+      const res = await fetch(BASE_URL + '/projects', { method: 'POST', headers: authHeaders(), body: JSON.stringify(newProject) });
       const data = await res.json();
       setProjects(prev => [data, ...prev]);
       setNewProject({ building_name: '', building_type: 'hotel', city: '', state: 'TX', scope: '', year_completed: new Date().getFullYear() });
@@ -84,7 +81,7 @@ const Profile = () => {
 
   const handleDeleteProject = async (id) => {
     try {
-      await fetch(BASE_URL + '/projects/' + id, { method: 'DELETE', headers });
+      await fetch(BASE_URL + '/projects/' + id, { method: 'DELETE', headers: authHeaders() });
       setProjects(prev => prev.filter(p => p.id !== id));
     } catch(e) {}
   };
@@ -117,11 +114,11 @@ const Profile = () => {
     setTechError(null);
     try {
       if (editingTech) {
-        const res = await fetch(BASE_URL + '/technicians/' + editingTech.id, { method: 'PATCH', headers, body: JSON.stringify(techForm) });
+        const res = await fetch(BASE_URL + '/technicians/' + editingTech.id, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(techForm) });
         const data = await res.json();
         setTechnicians(prev => prev.map(t => t.id === editingTech.id ? data : t));
       } else {
-        const res = await fetch(BASE_URL + '/technicians', { method: 'POST', headers, body: JSON.stringify(techForm) });
+        const res = await fetch(BASE_URL + '/technicians', { method: 'POST', headers: authHeaders(), body: JSON.stringify(techForm) });
         const data = await res.json();
         setTechnicians(prev => [...prev, data]);
       }
@@ -133,7 +130,7 @@ const Profile = () => {
 
   const handleDeactivateTech = async (id) => {
     try {
-      await fetch(BASE_URL + '/technicians/' + id, { method: 'DELETE', headers });
+      await fetch(BASE_URL + '/technicians/' + id, { method: 'DELETE', headers: authHeaders() });
       setTechnicians(prev => prev.map(t => t.id === id ? { ...t, status: 'inactive' } : t));
     } catch(e) {}
   };

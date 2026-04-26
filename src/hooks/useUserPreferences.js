@@ -40,15 +40,16 @@ export const useUserPreferences = () => {
     load();
   }, [user]);
 
-  // Save a single preference key — debounced so rapid changes don't spam the API
+  // Save a single preference key — debounced so rapid changes don't spam the API.
+  // Always send the ID token (carries cognito:groups + email — what the Lambda decodes).
   const savePreference = useCallback(async (key, value) => {
-    // Update local state immediately so UI feels instant
     const updated = { ...preferences, [key]: value };
     setPreferences(updated);
     if (memoryCache) memoryCache.preferences = updated;
 
     try {
-      const token = getToken();
+      const token = getIdToken ? getIdToken() : getToken();
+      if (!token) return; // not logged in yet — drop the write rather than send Bearer null
       await fetch(`${API}/me/preferences`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -57,7 +58,7 @@ export const useUserPreferences = () => {
     } catch (e) {
       console.error('Failed to save preference:', e);
     }
-  }, [preferences, getToken]);
+  }, [preferences, getIdToken, getToken]);
 
   // Save multiple preferences at once
   const savePreferences = useCallback(async (prefs) => {
@@ -66,7 +67,8 @@ export const useUserPreferences = () => {
     if (memoryCache) memoryCache.preferences = updated;
 
     try {
-      const token = getToken();
+      const token = getIdToken ? getIdToken() : getToken();
+      if (!token) return;
       await fetch(`${API}/me/preferences/bulk`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -75,7 +77,7 @@ export const useUserPreferences = () => {
     } catch (e) {
       console.error('Failed to save preferences:', e);
     }
-  }, [preferences, getToken]);
+  }, [preferences, getIdToken, getToken]);
 
   // Get a single preference with a fallback default
   const get = useCallback((key, defaultValue = null) => {

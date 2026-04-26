@@ -1,7 +1,7 @@
 import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../../services/authService';
+import { authHeaders } from '../../services/authService';
 import {
   Building2, AlertTriangle, TrendingUp, Filter, Plus, Search,
   MapPin, Calendar, ChevronRight, ChevronDown, RefreshCw, Mail, X, Shield,
@@ -57,10 +57,8 @@ const BuildingRegistry = () => {
   const [q, setQ]                       = useState('');
   const [page, setPage]                 = useState(0);
 
-  const authHeader = () => ({
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken(),
-  });
+  // headers built per-call via authHeaders() (only sets Authorization when a token exists)
+  const authHeader = authHeaders;
 
   // Restore saved preferences once they load
   useEffect(() => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpDown, LogOut, AlertCircle, DollarSign, CheckCircle, Clock, FileText, Download, ChevronRight, CreditCard, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -20,12 +20,8 @@ const BillingPayments = () => {
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
-  const headers = {
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
-
   useEffect(() => {
-    fetch(BASE_URL + '/invoices', { headers })
+    fetch(BASE_URL + '/invoices', { headers: authHeaders() })
       .then(r => r.json())
       .then(data => setInvoices(Array.isArray(data) ? data : []))
       .catch(e => setError(e.message))

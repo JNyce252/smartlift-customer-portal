@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpDown, Phone, Mail, MessageSquare, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Clock, ArrowLeft, Send } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -42,14 +42,11 @@ const Support = () => {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   useEffect(() => {
-    fetch(BASE_URL + '/profile', { headers }).then(r => r.json()).then(d => setProfile(d || {})).catch(() => {});
-    fetch(BASE_URL + '/tickets', { headers }).then(r => r.json()).then(d => setTickets(Array.isArray(d) ? d.slice(0, 5) : [])).catch(() => {});
+    fetch(BASE_URL + '/profile', { headers: authHeaders() }).then(r => r.json()).then(d => setProfile(d || {})).catch(() => {});
+    fetch(BASE_URL + '/tickets', { headers: authHeaders() }).then(r => r.json()).then(d => setTickets(Array.isArray(d) ? d.slice(0, 5) : [])).catch(() => {});
   }, []);
 
   const submitRequest = async () => {
@@ -57,7 +54,7 @@ const Support = () => {
     setSending(true);
     try {
       await fetch(BASE_URL + '/tickets', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({
           title: form.subject,
           description: form.message,

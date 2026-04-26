@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Building2, DollarSign, Plus, X, CheckCircle, Clock, AlertTriangle, Search, FileText, Send, Download } from 'lucide-react';
 import { generateInvoicePDF } from '../../utils/pdfGenerator';
 import { exportInvoicesCSV } from '../../utils/csvExport';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 // already from '../../utils/pdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 
@@ -36,17 +36,14 @@ const Invoices = () => {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchData = async () => {
     try {
       const [inv, cust, wo] = await Promise.all([
-        fetch(BASE_URL + '/invoices', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/customers', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/work-orders', { headers }).then(r => r.json()),
+        fetch(BASE_URL + '/invoices', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/customers', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/work-orders', { headers: authHeaders() }).then(r => r.json()),
       ]);
       setInvoices(Array.isArray(inv) ? inv : []);
       setCustomers(Array.isArray(cust) ? cust : []);
@@ -74,7 +71,7 @@ const Invoices = () => {
     setSaving(true);
     try {
       const res = await fetch(BASE_URL + '/invoices', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ ...form, line_items: lineItems })
       });
       const data = await res.json();
@@ -90,7 +87,7 @@ const Invoices = () => {
     try {
       const paid_date = status === 'paid' ? new Date().toISOString().split('T')[0] : undefined;
       await fetch(BASE_URL + '/invoices/' + id, {
-        method: 'PATCH', headers,
+        method: 'PATCH', headers: authHeaders(),
         body: JSON.stringify({ status, paid_date })
       });
       setInvoices(prev => prev.map(i => i.id === id ? { ...i, status, paid_date } : i));
@@ -101,7 +98,7 @@ const Invoices = () => {
   const generateFromWorkOrder = async (workOrderId) => {
     try {
       const res = await fetch(BASE_URL + '/invoices/generate', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ work_order_id: workOrderId })
       });
       const data = await res.json();

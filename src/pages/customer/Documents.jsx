@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpDown, FileText, Search, Eye, Calendar, Tag, Shield, ArrowLeft, Download, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { authService } from '../../services/authService';
+import { authHeaders } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -23,12 +23,8 @@ const Documents = () => {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
 
-  const headers = {
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
-
   useEffect(() => {
-    fetch(BASE_URL + '/documents', { headers })
+    fetch(BASE_URL + '/documents', { headers: authHeaders() })
       .then(r => r.json())
       .then(data => setDocuments(Array.isArray(data) ? data : []))
       .catch(() => {})

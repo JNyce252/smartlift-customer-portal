@@ -2,7 +2,7 @@ import { useUserPreferences } from '../../hooks/useUserPreferences';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Building2, AlertTriangle, Clock, CheckCircle, Plus, Search, Filter, MapPin, Calendar, Zap, TrendingUp, ChevronRight, RefreshCw, Mail, X, Shield } from 'lucide-react';
-import { authService } from '../../services/authService';
+import { authHeaders, authService } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -45,10 +45,7 @@ const TDLRIntelligence = () => {
   }, [prefsLoading]);
   const LIMIT = 25;
 
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + authService.getIdToken()
-  };
+  // headers built per fetch via authHeaders() — see authService.js
 
   const fetchRecords = useCallback(async (resetPage = false) => {
     setLoading(true);
@@ -62,7 +59,7 @@ const TDLRIntelligence = () => {
         ...(filterCity && { city: filterCity }),
         ...(filterType && { equipment_type: filterType }),
       });
-      const res = await fetch(BASE_URL + '/tdlr/expiring?' + params, { headers });
+      const res = await fetch(BASE_URL + '/tdlr/expiring?' + params, { headers: authHeaders() });
       const data = await res.json();
       setRecords(data.records || []);
       setCounts(data.counts || {});
@@ -79,7 +76,7 @@ const TDLRIntelligence = () => {
     setAdding(prev => ({ ...prev, [record.id]: true }));
     try {
       const res = await fetch(BASE_URL + '/tdlr/add-prospect', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({
           tdlr_id: record.id,
           building_name: record.building_name,
