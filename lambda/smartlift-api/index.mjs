@@ -218,6 +218,35 @@ export const handler = async (event) => {
       return respond(200, result.rows);
     }
 
+    // GET /proposals — list all proposals for this company, joined with the originating
+    // prospect so the frontend can show context without an N+1 fetch. Returns the most-recent
+    // proposal per prospect (DISTINCT ON) plus a content_excerpt for previewing.
+    if (method === 'GET' && path === '/proposals') {
+      const result = await pool.query(`
+        SELECT
+          pr.id,
+          pr.prospect_id,
+          pr.generated_at,
+          LEFT(pr.content, 240) AS content_excerpt,
+          LENGTH(pr.content) AS content_length,
+          p.name AS prospect_name,
+          p.city AS prospect_city,
+          p.state AS prospect_state,
+          p.status AS prospect_status,
+          p.lead_score,
+          p.estimated_elevators
+        FROM proposals pr
+        JOIN prospects p ON p.id = pr.prospect_id AND p.company_id = pr.company_id
+        WHERE pr.company_id = $1
+          AND p.archived = FALSE
+          AND pr.id IN (
+            SELECT MAX(id) FROM proposals WHERE company_id = $1 GROUP BY prospect_id
+          )
+        ORDER BY pr.generated_at DESC
+      `, [companyId]);
+      return respond(200, result.rows);
+    }
+
     if (method === 'POST' && path === '/prospects') {
       const body = JSON.parse(event.body || '{}');
       const { name, google_place_id, address, city, state, phone, website, rating, total_reviews, type, lat, lng, lead_score } = body;

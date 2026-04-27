@@ -13,6 +13,7 @@ import Analytics from './pages/internal/Analytics';
 import RouteOptimizer from './pages/internal/RouteOptimizer';
 import TeamManagement from './pages/internal/TeamManagement';
 import Pipeline from './pages/internal/Pipeline';
+import Proposals from './pages/internal/Proposals';
 import WorkOrders from './pages/internal/WorkOrders';
 import MaintenanceScheduling from './pages/internal/MaintenanceScheduling';
 import Invoices from './pages/internal/Invoices';
@@ -44,6 +45,7 @@ function App() {
           <Route path="/internal/team" element={<PrivateRoute requiredRole="company"><InternalLayout><TeamManagement /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/profile" element={<PrivateRoute requiredRole="company"><InternalLayout><Profile /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/pipeline" element={<PrivateRoute requiredRole="company"><InternalLayout><Pipeline /></InternalLayout></PrivateRoute>} />
+          <Route path="/internal/proposals" element={<PrivateRoute requiredRole="company"><InternalLayout><Proposals /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/work-orders" element={<PrivateRoute requiredRole="company"><InternalLayout><WorkOrders /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/maintenance-scheduling" element={<PrivateRoute requiredRole="company"><InternalLayout><MaintenanceScheduling /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/invoices" element={<PrivateRoute requiredRole="company"><InternalLayout><Invoices /></InternalLayout></PrivateRoute>} />

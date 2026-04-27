@@ -20,7 +20,7 @@ const Login = () => {
   useEffect(() => {
     setMounted(true);
     if (isAuthenticated && user) {
-      navigate(user.role === 'company' ? '/internal/dashboard' : '/customer/dashboard');
+      navigate(['owner','technician','sales','staff','company'].includes(user.role) ? '/internal/dashboard' : '/customer/dashboard');
     }
   }, [isAuthenticated, user, navigate]);
 
