@@ -1,28 +1,29 @@
 import pg from 'pg';
 import https from 'https';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 // SOURCE: Texas Department of Licensing and Regulation
 // Public elevator equipment database — updated daily
-// URL: https://www.tdlr.texas.gov/Elevator_SearchApp/Elevator/ExportCsv
-// Data dictionary: https://www.tdlr.texas.gov/Elevator_SearchApp/Home/SearchHelp
 const TDLR_CSV_URL = 'https://www.tdlr.texas.gov/Elevator_SearchApp/Elevator/ExportCsv';
 
-// Fail fast if DB env vars are missing — never embed credentials in source.
-const required = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
-const missing = required.filter(k => !process.env[k]);
-if (missing.length) {
-  throw new Error('Missing required env vars: ' + missing.join(', '));
+// DB credentials: prefer Secrets Manager (when DB_SECRET_ARN is set), fall back to env vars.
+async function loadDbConfig() {
+  const secretArn = process.env.DB_SECRET_ARN;
+  if (secretArn) {
+    const sm = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
+    const { SecretString } = await sm.send(new GetSecretValueCommand({ SecretId: secretArn }));
+    const s = JSON.parse(SecretString);
+    return { host: s.host || process.env.DB_HOST, port: parseInt(s.port || process.env.DB_PORT || '5432'),
+             user: s.username || process.env.DB_USER, password: s.password, database: s.dbname || process.env.DB_NAME };
+  }
+  const required = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length) throw new Error('Missing DB env vars: ' + missing.join(', '));
+  return { host: process.env.DB_HOST, port: parseInt(process.env.DB_PORT || '5432'),
+           user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 }
-
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: parseInt(process.env.DB_PORT || '5432'),
-  ssl: { rejectUnauthorized: false },
-  max: 2,
-});
+const _dbConfig = await loadDbConfig();
+const pool = new pg.Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false }, max: 2 });
 
 function downloadCSV(url) {
   return new Promise((resolve, reject) => {

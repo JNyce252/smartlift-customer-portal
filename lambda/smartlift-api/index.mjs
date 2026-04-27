@@ -2,6 +2,7 @@ import pg from 'pg';
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand,
   AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand,
   AdminDisableUserCommand, AdminEnableUserCommand, AdminSetUserPasswordCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 const cognitoClient = new CognitoIdentityProviderClient({ region: 'us-east-1' });
 const USER_POOL_ID = 'us-east-1_n7bsroYdL';
@@ -9,14 +10,38 @@ const ROLE_GROUPS = ['Owners', 'Technicians', 'SalesOffice'];
 const REGISTRY_STATES = ['TX']; // expand here when CA, FL, NYC data is loaded
 
 const { Pool } = pg;
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl: { rejectUnauthorized: false }
-});
+
+// DB credentials: prefer Secrets Manager (when DB_SECRET_ARN is set), fall back to env vars.
+// Loaded once at cold-start via top-level await — Node 20 ESM supports this on Lambda.
+async function loadDbConfig() {
+  const secretArn = process.env.DB_SECRET_ARN;
+  if (secretArn) {
+    const sm = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
+    const { SecretString } = await sm.send(new GetSecretValueCommand({ SecretId: secretArn }));
+    const s = JSON.parse(SecretString);
+    return {
+      host: s.host || process.env.DB_HOST,
+      port: parseInt(s.port || process.env.DB_PORT || '5432'),
+      user: s.username || process.env.DB_USER,
+      password: s.password,
+      database: s.dbname || process.env.DB_NAME,
+    };
+  }
+  // Fallback: env vars (kept for safety during the migration; will be removed after rollout)
+  const required = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length) throw new Error('Missing DB env vars: ' + missing.join(', '));
+  return {
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT || '5432'),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  };
+}
+
+const _dbConfig = await loadDbConfig();
+const pool = new Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false } });
 
 // CORS — only echo allowlisted origins. Wildcard '*' is unsafe combined with Authorization.
 // Add new frontend origins here when needed (Amplify preview branches, custom domains, etc.).
@@ -219,8 +244,9 @@ export const handler = async (event) => {
     }
 
     // GET /proposals — list all proposals for this company, joined with the originating
-    // prospect so the frontend can show context without an N+1 fetch. Returns the most-recent
-    // proposal per prospect (DISTINCT ON) plus a content_excerpt for previewing.
+    // prospect (and elevator_intelligence for estimated_elevators, which lives on that
+    // table — not on prospects). Returns the most-recent proposal per prospect plus a
+    // content_excerpt for previewing.
     if (method === 'GET' && path === '/proposals') {
       const result = await pool.query(`
         SELECT
@@ -234,9 +260,10 @@ export const handler = async (event) => {
           p.state AS prospect_state,
           p.status AS prospect_status,
           p.lead_score,
-          p.estimated_elevators
+          ei.estimated_elevators
         FROM proposals pr
         JOIN prospects p ON p.id = pr.prospect_id AND p.company_id = pr.company_id
+        LEFT JOIN elevator_intelligence ei ON ei.prospect_id = p.id
         WHERE pr.company_id = $1
           AND p.archived = FALSE
           AND pr.id IN (
