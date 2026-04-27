@@ -1,10 +1,21 @@
 import pg from 'pg';
 import https from 'https';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 // SOURCE: Texas Department of Licensing and Regulation
 // Public elevator equipment database — updated daily
 const TDLR_CSV_URL = 'https://www.tdlr.texas.gov/Elevator_SearchApp/Elevator/ExportCsv';
+
+// AWS RDS root CA bundle for TLS cert validation.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RDS_CA = (() => {
+  try { return readFileSync(join(__dirname, 'rds-ca.pem'), 'utf8'); }
+  catch { return null; }
+})();
+if (!RDS_CA) console.warn('[startup] rds-ca.pem missing — TLS will not validate cert');
 
 // DB credentials: prefer Secrets Manager (when DB_SECRET_ARN is set), fall back to env vars.
 async function loadDbConfig() {
@@ -23,7 +34,8 @@ async function loadDbConfig() {
            user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 }
 const _dbConfig = await loadDbConfig();
-const pool = new pg.Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false }, max: 2 });
+const _ssl = RDS_CA ? { ca: RDS_CA, rejectUnauthorized: true } : { rejectUnauthorized: false };
+const pool = new pg.Pool({ ..._dbConfig, ssl: _ssl, max: 2 });
 
 function downloadCSV(url) {
   return new Promise((resolve, reject) => {
@@ -75,14 +87,14 @@ export const handler = async (event) => {
     await client.query('BEGIN');
     
     // Preserve prospect links before clearing
-    const linked = await client.query('SELECT id, prospect_id FROM tdlr_elevators WHERE prospect_id IS NOT NULL');
+    const linked = await client.query('SELECT id, prospect_id FROM building_registry WHERE prospect_id IS NOT NULL');
     const linkedMap = {};
     for (const row of linked.rows) {
       linkedMap[row.id] = row.prospect_id;
     }
 
-    await client.query('UPDATE tdlr_elevators SET prospect_id = NULL WHERE prospect_id IS NOT NULL');
-    await client.query('DELETE FROM tdlr_elevators');
+    await client.query('UPDATE building_registry SET prospect_id = NULL WHERE prospect_id IS NOT NULL');
+    await client.query('DELETE FROM building_registry');
     console.log('Cleared existing records, reimporting fresh data...');
 
     for (let i = 1; i < lines.length; i++) {
@@ -108,7 +120,7 @@ export const handler = async (event) => {
 
       try {
         const result = await client.query(`
-          INSERT INTO tdlr_elevators (
+          INSERT INTO building_registry (
             elevator_number, building_name, building_address, building_city,
             building_state, building_zip, building_county, owner_name,
             equipment_type, drive_type, floors, year_installed,
@@ -138,7 +150,7 @@ export const handler = async (event) => {
         COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '30 days') as expiring_30,
         COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '60 days') as expiring_60,
         COUNT(*) FILTER (WHERE expiration BETWEEN NOW() AND NOW() + INTERVAL '90 days') as expiring_90
-      FROM tdlr_elevators
+      FROM building_registry
     `);
 
     // Also refresh contractor and inspector lists daily

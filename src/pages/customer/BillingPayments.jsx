@@ -16,14 +16,20 @@ const statusConfig = {
 const BillingPayments = () => {
   const { user, logout } = useAuth();
   const [invoices, setInvoices] = useState([]);
+  const [profile, setProfile] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
-    fetch(BASE_URL + '/invoices', { headers: authHeaders() })
-      .then(r => r.json())
-      .then(data => setInvoices(Array.isArray(data) ? data : []))
+    Promise.all([
+      fetch(BASE_URL + '/invoices', { headers: authHeaders() }).then(r => r.json()).catch(() => []),
+      fetch(BASE_URL + '/profile', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
+    ])
+      .then(([inv, prof]) => {
+        setInvoices(Array.isArray(inv) ? inv : []);
+        setProfile(prof || {});
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -200,13 +206,15 @@ const BillingPayments = () => {
                         <p className="text-gray-400 text-sm bg-gray-700/30 rounded-lg p-3 mb-4">{invoice.notes}</p>
                       )}
 
-                      {/* Pay Now button — Stripe ready */}
-                      {invoice.status !== 'paid' && (
+                      {/* Pay Now CTA — emails the service provider for a payment link.
+                          Stripe integration is the planned upgrade (see CUSTOMER_PORTAL_REVIEW.md CM-1).
+                          Hidden entirely if profile.email is unavailable so we never show a broken link. */}
+                      {invoice.status !== 'paid' && profile.email && (
                         <div className="bg-blue-900/10 border border-blue-700/30 rounded-xl p-4 text-center">
                           <CreditCard className="w-8 h-8 text-blue-400 mx-auto mb-2" />
                           <p className="text-white font-semibold mb-1">Ready to pay online?</p>
                           <p className="text-gray-400 text-sm mb-3">Contact your service provider for a secure payment link</p>
-                          <a href={`mailto:derald@swcabs.com?subject=Payment for Invoice ${invoice.invoice_number}`}
+                          <a href={`mailto:${profile.email}?subject=Payment for Invoice ${invoice.invoice_number}`}
                             className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
                             <DollarSign className="w-4 h-4" />Request Payment Link
                           </a>

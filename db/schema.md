@@ -1,8 +1,9 @@
 # Smarterlift Database Schema
 
 _Pulled live 2026-04-26 from hotel-leads-aurora cluster (PostgreSQL 16.8)._
+_Modified 2026-04-27: dropped `activities`, `contacts`, `service_requests` (H-5 closure — dead tables, zero rows, zero code references; live counterparts `activity_log`, `prospect_contacts`, `service_tickets` already enforce `company_id`)._
 
-Total tables: 40
+Total tables: 37
 
 ## Multi-tenancy: tables with company_id (26):
 
@@ -35,37 +36,21 @@ Total tables: 40
 
 ## Tables WITHOUT company_id:
 
-- activities
-- building_registry
-- buildings
-- companies
-- contacts
-- customer_elevator_summary
-- elevator_contractors
-- elevator_inspectors
-- high_priority_leads
-- hotel_contacts
-- hotels
-- lead_scores
-- news_mentions
-- service_requests
+Each entry is annotated with whether the absence is intentional. After the H-5 cleanup, the only remaining tables without `company_id` are either global reference data, derived views, the root tenant table, or legacy/dead tables awaiting confirmation.
+
+- building_registry — global reference data (TDLR Texas elevator registry, 74k rows); intentionally not tenant-scoped
+- buildings — legacy; verify usage before next cleanup
+- companies — root tenant table; intentional
+- customer_elevator_summary — derived view
+- elevator_contractors — global reference data (TDLR contractor registry); intentionally not tenant-scoped
+- elevator_inspectors — global reference data (TDLR inspector registry); intentionally not tenant-scoped
+- high_priority_leads — derived view
+- hotel_contacts — legacy; verify usage before next cleanup
+- hotels — legacy; verify usage before next cleanup
+- lead_scores — derived view
+- news_mentions — legacy / unused; verify before next cleanup
 
 ## Columns per table
-
-### `activities` (10 cols)
-
-| col | type | null | default |
-|---|---|---|---|
-| id | integer | NO | nextval('activities_id_seq'::regclass) |
-| prospect_id | integer | YES |  |
-| user_id | character varying | YES |  |
-| activity_type | character varying | YES |  |
-| description | text | YES |  |
-| outcome | character varying | YES |  |
-| next_action | character varying | YES |  |
-| scheduled_date | timestamp without time zone | YES |  |
-| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
-| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
 
 ### `activity_log` (8 cols)
 
@@ -210,22 +195,6 @@ Total tables: 40
 | year_completed | integer | YES |  |
 | created_at | timestamp without time zone | YES | now() |
 | company_id | integer | YES | 1 |
-
-### `contacts` (11 cols)
-
-| col | type | null | default |
-|---|---|---|---|
-| id | integer | NO | nextval('contacts_id_seq'::regclass) |
-| prospect_id | integer | YES |  |
-| name | character varying | YES |  |
-| title | character varying | YES |  |
-| email | character varying | YES |  |
-| phone | character varying | YES |  |
-| linkedin_url | character varying | YES |  |
-| source | character varying | YES |  |
-| verified | boolean | YES | false |
-| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
-| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
 
 ### `contracts` (16 cols)
 
@@ -679,22 +648,6 @@ Total tables: 40
 | status | character varying | YES | 'pending'::character varying |
 | created_at | timestamp without time zone | NO | now() |
 
-### `service_requests` (11 cols)
-
-| col | type | null | default |
-|---|---|---|---|
-| id | integer | NO | nextval('service_requests_id_seq'::regcl |
-| customer_id | character varying | YES |  |
-| elevator_id | character varying | YES |  |
-| issue_description | text | YES |  |
-| priority | character varying | YES | 'Medium'::character varying |
-| status | character varying | YES | 'Scheduled'::character varying |
-| technician_name | character varying | YES |  |
-| estimated_completion | timestamp without time zone | YES |  |
-| contact_preference | character varying | YES | 'email'::character varying |
-| created_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
-| updated_at | timestamp without time zone | YES | CURRENT_TIMESTAMP |
-
 ### `service_tickets` (17 cols)
 
 | col | type | null | default |
@@ -782,7 +735,6 @@ Total tables: 40
 
 ## Row counts (per table)
 
-- activities: 0
 - activity_log: 107
 - building_registry: 74001
 - buildings: 0
@@ -790,7 +742,6 @@ Total tables: 40
 - company_profile: 1
 - company_users: 1
 - completed_projects: 0
-- contacts: 0
 - contracts: 0
 - customer_elevator_summary: 2
 - customers: 1
@@ -816,7 +767,6 @@ Total tables: 40
 - prospect_notes: 1
 - prospects: 8
 - registry_requests: 1
-- service_requests: 0
 - service_tickets: 1
 - subscription_events: 0
 - technicians: 1

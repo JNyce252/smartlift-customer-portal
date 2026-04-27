@@ -2,7 +2,7 @@
 
 _Generated 2026-04-26 from a complete pull of the live AWS account, all 6 Lambda sources, the React frontend, and a live introspection of the production Postgres schema. Every finding is grounded in a file:line, a configuration value, or a verified live test._
 
-> **Bottom line:** the application is a functional MVP whose **production data is currently reachable from the open internet** without authentication. I confirmed this empirically — I connected to the Aurora cluster from a sandbox using only the credentials present in the codebase, with no IP allowlist required. The most urgent items below should be fixed before adding the second tenant or any further production usage. Most fixes are small.
+> **Bottom line (updated 2026-04-27 second pass continuation):** **all 5 originally-CRITICAL and all 8 originally-HIGH findings are CLOSED.** Production data is no longer reachable from the open internet, the API has a Cognito Authorizer on every protected route, multi-tenancy fails closed, tokens flow through a single source of truth, dead schema tables are dropped, and the Cognito pool is hardened (DeletionProtection ACTIVE, MFA OPTIONAL with TOTP, sandbox tag removed, group precedence corrected). Remaining work is incremental: MEDIUM Step 7 (within-tenant customer scoping), MEDIUM M-3 (Aurora deletion protection + multi-AZ), and assorted LOW cleanups.
 
 ---
 
@@ -10,7 +10,46 @@ _Generated 2026-04-26 from a complete pull of the live AWS account, all 6 Lambda
 
 ### CRITICAL — fix today
 
-#### C-1. Aurora's security group is open to the internet on port 5432
+#### C-1. Aurora's security group is open to the internet on port 5432 (**CLOSED 2026-04-27**)
+
+**Closure (2026-04-27 evening):** All 5 DB-using Lambdas migrated into the default VPC `vpc-06cec9c7bd56c515d` with NAT Gateway egress, on a dedicated Lambda SG, and the `0.0.0.0/0:5432` ingress on `sg-0a10102c1e09c540e` was revoked at 2026-04-27T21:16Z. Aurora is no longer reachable from the public internet.
+
+Final architecture (verified live + via end-to-end test):
+
+| Resource | ID | Notes |
+|---|---|---|
+| New private subnet 1a | `subnet-0a4eb0fd5b55ef324` | `172.31.96.0/20`, MapPublicIp=false |
+| New private subnet 1b | `subnet-0556c8d00aa1f99ff` | `172.31.112.0/20`, MapPublicIp=false |
+| Elastic IP            | `eipalloc-045f2e977c1e13573` | NAT Gateway EIP |
+| NAT Gateway           | `nat-07c5a41250bccf625` | in public subnet `subnet-0fc3605ad04dca501` (1a) |
+| Private route table   | `rtb-0b767a35d2459cdd3` | `0.0.0.0/0 → NAT`, attached to both new subnets |
+| Lambda SG             | `sg-05ad862bc8fe7fc3c` | no inbound; default egress |
+| Aurora SG ingress     | `sgr-0827292773d505083` | tcp/5432 from Lambda SG |
+| Aurora SG ingress     | (added during phase A) | tcp/443 from Lambda SG (for VPC endpoint reach) |
+| Bedrock VPC endpoint  | `vpce-05d0471881d3b686d` | Interface, PrivateDNS=true, on Aurora SG |
+| Lambda  VPC endpoint  | `vpce-076eb482b98292308` | Interface, PrivateDNS=true, on Aurora SG |
+| State file            | `scripts/.vpc-phase-a-state.json` | written by Phase A; consumed by Phase B |
+
+Verification proof:
+- `smartlift-tdlr-refresh` ingested 74,052 TDLR rows + 365 contractors + 208 inspectors via NAT egress + SG-to-SG (also fixed the latent `tdlr_elevators → building_registry` table-name bug in 5 places).
+- `smartlift-ai-scorer` scored all 8 prospects via the Bedrock VPC interface endpoint (Bedrock InvokeModel × 8 from new private subnets, lead_scores 72–96).
+- `smartlift-api` /health returns 2xx; logged-in dashboard load returned 2xx for /profile, /prospects, /work-orders, /invoices, /analytics/*.
+- Pre- and post-revoke /health both clean.
+
+Scripts (idempotent, in `scripts/`):
+- `vpc-phase-a-infra.sh` — provisions all VPC infra and writes the state file.
+- `vpc-phase-b0-iam-vpc.sh` — attaches `AWSLambdaVPCAccessExecutionRole` to the 4 per-Lambda roles missing it.
+- `vpc-phase-b-lambdas.sh <name>` — per-Lambda VPC attach (also supports `rollback` and `status`).
+- `vpc-phase-d-close-aurora-sg.sh` — pre-flight health check, revoke 0.0.0.0/0:5432, post-revoke verify.
+
+Cost added: ~$32/mo flat for the NAT Gateway + ~$0.045/GB processed.
+
+Known caveats / orthogonal cleanup:
+- `tcp/22 from 52.95.4.19/32` ingress on the Aurora SG is still present; it's an AWS IP, not in active use.
+- VPC interface endpoints are attached to the Aurora SG (`sg-0a10102c1e09c540e`) rather than a dedicated endpoint SG; that's why the Lambda SG needs port-443 ingress on the Aurora SG. Future hardening: split into a dedicated VPC endpoint SG.
+- Single NAT (1a only); deliberate, matches single-AZ Aurora today. Dual-AZ NAT becomes worthwhile when Aurora goes Multi-AZ (M-3 / future).
+
+
 
 `infra/aurora/security-group-sg-0a10102c1e09c540e.json`
 
@@ -174,35 +213,36 @@ Same key is also in `.env.local` (`REACT_APP_GOOGLE_PLACES_API_KEY`) and shipped
 2. Verify in GCP console that the key has **HTTP-referrer restrictions** (for the bundled key) or **server IP allowlist** (for the server key).
 3. Rotate the key now; it's been in source for a while.
 
-#### H-5. Inconsistent / missing `company_id` on key tables
+#### H-5. Inconsistent / missing `company_id` on key tables (**CLOSED 2026-04-27**)
 
-`db/schema.md`
+**Closure (2026-04-27):** All three concrete cross-tenant leak vectors (`activities`, `contacts`, `service_requests`) are now dropped. Pre-flight verified zero rows live and zero SQL references in any Lambda or frontend file. Live multi-tenant counterparts already enforce `company_id`:
 
-Tables **without** `company_id` (14 of 40):
-- `activities` — has `prospect_id` and `user_id` but no `company_id`. **Cross-tenant leak vector** — if not strictly cascaded by `prospect_id`, a tenant-2 user could query tenant-1 activity. (Currently empty — fix before populating.)
-- `service_requests` — customer-facing. (Currently empty.) `service_tickets` does have `company_id`. Pick one.
-- `contacts` — appears legacy; `prospect_contacts` is the live one (37 rows).
-- `news_mentions`, `lead_scores`, `high_priority_leads`, `customer_elevator_summary` — likely views/derived; verify.
-- `building_registry`, `elevator_contractors`, `elevator_inspectors`, `hotels`, `buildings`, `hotel_contacts` — reference / public TDLR data, intentionally global. Document this explicitly.
-- `companies` — root; intentional.
+| Dropped (dead) | Live counterpart (in use, has `company_id`) |
+|---|---|
+| `activities` | `activity_log` (107 rows) |
+| `contacts` | `prospect_contacts` (37 rows) |
+| `service_requests` | `service_tickets` (1 row) |
 
-**Fix:**
-1. Add `company_id NOT NULL` + index to `activities`, `service_requests`, `contacts` (or drop if dead).
-2. For confirmed-global tables (`building_registry`, contractors, inspectors), add a one-line comment in `db/schema.md` saying **"global reference data; intentionally not tenant-scoped."**
-3. Add a CI check: any new table must declare `company_id` or be on an explicit allowlist.
+The remaining tables without `company_id` in `db/schema.md` are now annotated explicitly: `building_registry` / `elevator_contractors` / `elevator_inspectors` are global TDLR reference data (intentional); `companies` is the root tenant table (intentional); `customer_elevator_summary`, `high_priority_leads`, `lead_scores` are derived views; `buildings` / `hotels` / `hotel_contacts` / `news_mentions` are flagged as legacy pending future audit.
 
-#### H-6. Cognito user pool is a sandbox deployment in production
+Migration via Aurora RDS Data API (HTTPS, no VPC ingress required) — script `scripts/h5-drop-dead-tables.sh` is idempotent and pre-flight-aborts if any of the three are non-empty.
 
-`infra/cognito/user-pool-main.json`
+Deferred to future hygiene pass: a CI check that any new table must declare `company_id` or be on an explicit allowlist. Low priority — there are no schema-migration PRs in flight.
 
-The pool tags include `amplify:deployment-type: sandbox`. `DeletionProtection: INACTIVE`. `MfaConfiguration: OFF`. Five real users live in this pool; an `amplify sandbox delete` could remove them.
+#### H-6. Cognito user pool is a sandbox deployment in production (**CLOSED 2026-04-27**)
 
-Group precedence is also inverted: `CompanyUsers` has precedence=1 (highest), `Owners`=10. In Cognito, **lower number wins.** A user in both Owners and CompanyUsers will be evaluated as `staff`, not `owner`. The role decoder in `AuthContext.jsx:14-27` and `authService.js:21-27` happens to check Owners first regardless of precedence so the bug doesn't bite at runtime — but the precedence numbers are misleading and will trip whoever fixes a related bug later.
+**Closure (2026-04-27):** All four sub-issues fixed in place on the existing pool `us-east-1_n7bsroYdL` (no new pool, no user migration, no frontend redeploy, no API Gateway authorizer change — the original "promote or migrate" framing in this finding was over-prescribed; in-place modification gets to the same end state).
 
-**Fix:**
-1. Promote the pool to a non-sandbox stack (Amplify Gen 2 `amplify push --branch prod` or migrate users to a fresh pool). Set `DeletionProtection: ACTIVE`.
-2. Enable MFA — at minimum optional for Customers, **required for Owners**. This is the role with full DB-mutating power in the app.
-3. Re-set group precedence: Owners=1, Sales=2, Technicians=3, Staff=10, Customers=20.
+| Sub-issue | Fix |
+|---|---|
+| `amplify:deployment-type: sandbox` tag | Removed — closes the `amplify sandbox delete` foot-gun |
+| `DeletionProtection: INACTIVE` | Now **ACTIVE** |
+| `MfaConfiguration: OFF` | Now **OPTIONAL** with TOTP enabled (users self-enroll from profile) |
+| Group precedence inverted (CompanyUsers=1, Owners=10) | Now **Owners=1, SalesOffice=2, Technicians=3, CompanyUsers=10, Customers=20** |
+
+Existing users kept their passwords and active sessions — zero disruption. Pool tier is `ESSENTIALS`, which supports OPTIONAL MFA without upgrade. Script: `scripts/h6-harden-cognito-pool.sh` (idempotent; uses pass-through update-user-pool to avoid the documented quirk where unset fields reset to defaults).
+
+**Optional future hardening:** step up to `MfaConfiguration: ON` with TOTP **required** for Owners-only via per-user `admin-set-user-mfa-preference`. Strongly recommended before tenant 2.
 
 #### H-7. Bedrock prompt injection on the public contact form
 
@@ -302,18 +342,19 @@ The "all prospects" path doesn't filter by `company_id`. Currently called from `
 
 ## Recommended fix order (by ROI)
 
-| # | Item | Time | Why first |
-|---|---|---|---|
-| 1 | C-1 close port 5432 to internet | 30 min | Removes the worst attack surface |
-| 2 | C-2 rotate DB password + Secrets Manager | 2 h | Removes plaintext-in-source risk |
-| 3 | C-3 add Cognito Authorizer to API Gateway | 2 h | Re-imposes auth boundary |
-| 4 | C-4 + C-5 fix `getCompanyId` and frontend token key | 2 h | Without C-3 these are catastrophic; with C-3 they're still important |
-| 5 | H-1 CORS lockdown | 30 min | Trivial, removes browser-side amplification |
-| 6 | H-3 split IAM roles | 2 h | Reduces blast radius of any future RCE |
-| 7 | H-7 + H-8 prompt-injection + rate limits | 3 h | Cost protection on Bedrock + email |
-| 8 | M-2 deletion protection on Aurora + Cognito | 5 min | Cheap insurance |
+Original order is preserved here as a historical record. As of 2026-04-27 evening, items 1–7 are CLOSED; only the optional M-2/M-3 work remains in this list.
 
-Total to clear all CRITICAL + HIGH: roughly one focused day.
+| # | Item | Status |
+|---|---|---|
+| 1 | C-1 close port 5432 to internet | **CLOSED 2026-04-27** (VPC + NAT migration) |
+| 2 | C-2 rotate DB password + Secrets Manager | **CLOSED** |
+| 3 | C-3 add Cognito Authorizer to API Gateway | **CLOSED** |
+| 4 | C-4 + C-5 fix `getCompanyId` and frontend token key | **CLOSED** |
+| 5 | H-1 CORS lockdown | **CLOSED** at Lambda layer |
+| 6 | H-3 split IAM roles | **CLOSED** (per-Lambda roles) |
+| 7 | H-7 + H-8 prompt-injection + rate limits | **CLOSED** |
+| 8 | M-2 deletion protection on Aurora + Cognito | open — 5-min cleanup |
+| 9 | M-3 Aurora multi-AZ (HA + warrants dual-AZ NAT) | open — cost decision |
 
 ---
 

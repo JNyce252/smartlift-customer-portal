@@ -1,5 +1,55 @@
-# amplify
-node_modules
-.amplify
+# --- dependencies / node ---
+node_modules/
+
+# --- build output ---
+build/
+dist/
+*.tsbuildinfo
+
+# --- env / secrets ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# --- amplify ---
+.amplify/
 amplify_outputs*
 amplifyconfiguration*
+
+# --- script-generated state (idempotent script outputs) ---
+scripts/.vpc-phase-a-state.json
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --- logs / temp ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.cache/
+
+# --- coverage / test output ---
+coverage/
+.nyc_output/
+
+# --- misc ---
+*.tgz
+.eslintcache

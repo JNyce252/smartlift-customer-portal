@@ -1,8 +1,19 @@
 import pg from 'pg';
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const { Pool } = pg;
+
+// AWS RDS root CA bundle for TLS cert validation.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RDS_CA = (() => {
+  try { return readFileSync(join(__dirname, 'rds-ca.pem'), 'utf8'); }
+  catch { return null; }
+})();
+if (!RDS_CA) console.warn('[startup] rds-ca.pem missing — TLS will not validate cert');
 
 // DB credentials: prefer Secrets Manager (when DB_SECRET_ARN is set), fall back to env vars.
 async function loadDbConfig() {
@@ -21,7 +32,8 @@ async function loadDbConfig() {
            user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 }
 const _dbConfig = await loadDbConfig();
-const pool = new Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false } });
+const _ssl = RDS_CA ? { ca: RDS_CA, rejectUnauthorized: true } : { rejectUnauthorized: false };
+const pool = new Pool({ ..._dbConfig, ssl: _ssl });
 
 const bedrock = new BedrockRuntimeClient({ region: "us-east-1" });
 

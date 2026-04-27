@@ -53,7 +53,8 @@ if [[ ! -f "$HANDLER_FILE" ]]; then
   exit 1
 fi
 
-# Build zip. If node_modules is committed, include it; otherwise just the handler.
+# Build zip. If node_modules is committed, include it; otherwise just the handler
+# plus any small data files in the directory (e.g. rds-ca.pem for SSL validation).
 if [[ -d "node_modules" ]]; then
   echo "→ Zipping handler + node_modules (excluding dev junk)..."
   zip -qr "$ZIP_PATH" "$HANDLER_FILE" package.json node_modules \
@@ -62,9 +63,17 @@ if [[ -d "node_modules" ]]; then
     -x "node_modules/*/.github/*" \
     -x "node_modules/*/*.md" \
     -x "*.DS_Store"
+  # Include extra .pem and .mjs siblings (e.g. rds-ca.pem) without double-zipping the handler.
+  for f in *.pem *.mjs; do
+    [[ -f "$f" && "$f" != "$HANDLER_FILE" ]] && zip -qg "$ZIP_PATH" "$f"
+  done
 else
-  echo "→ Zipping handler only (Lambda uses layer for deps)..."
-  zip -qj "$ZIP_PATH" "$HANDLER_FILE"
+  echo "→ Zipping handler + sibling data files (Lambda uses layer for deps)..."
+  EXTRA_FILES=()
+  for f in *.pem *.mjs; do
+    [[ -f "$f" && "$f" != "$HANDLER_FILE" ]] && EXTRA_FILES+=("$f")
+  done
+  zip -qj "$ZIP_PATH" "$HANDLER_FILE" "${EXTRA_FILES[@]}"
 fi
 
 SIZE_BYTES="$(stat -f%z "$ZIP_PATH" 2>/dev/null || stat -c%s "$ZIP_PATH")"

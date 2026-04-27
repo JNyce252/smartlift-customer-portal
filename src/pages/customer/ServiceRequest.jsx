@@ -3,6 +3,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Phone, Clock, Home, LogOut, CheckCircle, AlertCircle, ArrowUpDown, ChevronRight, Wrench, Zap, AlertTriangle, Info } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { authHeaders } from '../../services/authService';
+
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
 const PRIORITY_OPTIONS = [
   {
@@ -65,6 +68,7 @@ const ServiceRequest = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [elevators, setElevators] = useState([]);
+  const [profile, setProfile] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [ticketNumber, setTicketNumber] = useState('');
@@ -80,7 +84,16 @@ const ServiceRequest = () => {
     api.getElevators()
       .then(data => setElevators(Array.isArray(data) ? data : []))
       .catch(console.error);
+    fetch(BASE_URL + '/profile', { headers: authHeaders() })
+      .then(r => r.json())
+      .then(p => setProfile(p || {}))
+      .catch(() => setProfile({}));
   }, []);
+
+  // Pull emergency dispatch number from the service company's profile.phone.
+  // Strip non-digits for the tel: scheme; keep the original for display.
+  const emergencyPhoneRaw = profile.phone || '';
+  const emergencyPhoneDigits = emergencyPhoneRaw.replace(/\D/g, '');
 
   const f = k => v => setForm(p => ({ ...p, [k]: v }));
 
@@ -162,7 +175,10 @@ const ServiceRequest = () => {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* Emergency Banner */}
+        {/* Emergency Banner — phone number sourced from company_profile.phone.
+            If profile hasn't loaded yet OR the service company hasn't set a phone,
+            we show the "do not submit a form" copy without a clickable number,
+            so we never display a stale or wrong dispatch number. */}
         <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-5 mb-8">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-red-900/40 rounded-xl flex items-center justify-center flex-shrink-0 border border-red-700/40">
@@ -172,10 +188,12 @@ const ServiceRequest = () => {
               <h3 className="text-white font-semibold mb-0.5">Passenger Trapped or Immediate Safety Hazard?</h3>
               <p className="text-gray-400 text-sm">Call our 24/7 emergency dispatch line immediately — do not submit a form.</p>
             </div>
-            <a href={`tel:${(elevators[0] && '9729747005') || '9729747005'}`}
-              className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-sm flex items-center gap-2 flex-shrink-0 transition-colors">
-              <Phone className="w-4 h-4" />972-974-7005
-            </a>
+            {emergencyPhoneDigits && (
+              <a href={`tel:${emergencyPhoneDigits}`}
+                className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-sm flex items-center gap-2 flex-shrink-0 transition-colors">
+                <Phone className="w-4 h-4" />{emergencyPhoneRaw}
+              </a>
+            )}
           </div>
         </div>
 

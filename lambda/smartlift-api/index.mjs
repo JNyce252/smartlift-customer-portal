@@ -3,6 +3,18 @@ import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand
   AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand,
   AdminDisableUserCommand, AdminEnableUserCommand, AdminSetUserPasswordCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// AWS RDS root CA bundle (global) — used to validate Aurora's TLS certificate.
+// File is shipped alongside index.mjs in the deployment package.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RDS_CA = (() => {
+  try { return readFileSync(join(__dirname, 'rds-ca.pem'), 'utf8'); }
+  catch { return null; } // fallback to relaxed TLS if cert missing (logged below)
+})();
+if (!RDS_CA) console.warn('[startup] rds-ca.pem missing — TLS will not validate cert');
 
 const cognitoClient = new CognitoIdentityProviderClient({ region: 'us-east-1' });
 const USER_POOL_ID = 'us-east-1_n7bsroYdL';
@@ -41,7 +53,10 @@ async function loadDbConfig() {
 }
 
 const _dbConfig = await loadDbConfig();
-const pool = new Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false } });
+// TLS to Aurora: validate the cert against the AWS RDS root CA bundle when present.
+// Falls back to a warning + insecure mode only if the bundle didn't ship.
+const _ssl = RDS_CA ? { ca: RDS_CA, rejectUnauthorized: true } : { rejectUnauthorized: false };
+const pool = new Pool({ ..._dbConfig, ssl: _ssl });
 
 // CORS — only echo allowlisted origins. Wildcard '*' is unsafe combined with Authorization.
 // Add new frontend origins here when needed (Amplify preview branches, custom domains, etc.).
@@ -218,9 +233,14 @@ export const handler = async (event) => {
     } catch (e) { return internalError(event, e); }
   }
 
-  let companyId;
+  // M-8a: also resolve customerId + authRole here so customer-callable handlers
+  // can additionally filter by customer_id when role === 'customer'.
+  // `authRole` is 'internal' | 'customer' (from getAuthContext); separate from
+  // the granular `role` local in some handlers from getUserRole(event)
+  // which returns 'owner'|'sales'|'technician'|'staff'|'customer' from JWT groups.
+  let companyId, customerId, authRole;
   try {
-    companyId = await getCompanyId(event, pool);
+    ({ companyId, customerId, role: authRole } = await getAuthContext(event, pool));
   } catch (e) {
     if (e instanceof AuthError) {
       return respondTo(event, 401, { error: 'Unauthorized', reason: e.reason });
@@ -1554,6 +1574,10 @@ Return this JSON only:
     }
 
     if (method === 'PATCH' && path === '/profile') {
+      // M-8a: PATCH /profile mutates the SERVICE-COMPANY profile (Southwest Cabs),
+      // not the caller's customer record. Customer-role users have no business
+      // here — refuse and never reach the UPDATE.
+      if (authRole === 'customer') return respond(403, { error: 'forbidden' });
       const body = JSON.parse(event.body || '{}');
       const { company_name, owner_name, email, phone, city, state, bio, tagline, service_area, years_in_business, tdlr_license, credentials, certifications, insurance_info } = body;
       const existing = await pool.query('SELECT id FROM company_profile WHERE company_id=$1 LIMIT 1', [companyId]);
@@ -1615,11 +1639,14 @@ Return this JSON only:
 
     if (method === 'GET' && path === '/documents') {
       const { customer_id, category } = event.queryStringParameters || {};
-      let query = `SELECT d.*, c.company_name as customer_name 
+      let query = `SELECT d.*, c.company_name as customer_name
         FROM documents d LEFT JOIN customers c ON c.id = d.customer_id
         WHERE d.company_id = $1`;
       const params = [companyId];
-      if (customer_id) { query += ` AND d.customer_id = $${params.length + 1}`; params.push(customer_id); }
+      // M-8a: a Customer-role caller is force-scoped to their own customer_id;
+      // an attacker-supplied ?customer_id query param is ignored for them.
+      const effectiveCustomerId = authRole === 'customer' ? customerId : customer_id;
+      if (effectiveCustomerId) { query += ` AND d.customer_id = $${params.length + 1}`; params.push(effectiveCustomerId); }
       if (category) { query += ` AND d.category = $${params.length + 1}`; params.push(category); }
       query += ' ORDER BY d.created_at DESC';
       const result = await pool.query(query, params);
@@ -1693,13 +1720,20 @@ Return this JSON only:
     // ==================== INVOICES ====================
 
     if (method === 'GET' && path === '/invoices') {
+      // M-8a: Customer-role callers see only their own invoices.
+      const params = [companyId];
+      let where = 'WHERE i.company_id = $1';
+      if (authRole === 'customer') {
+        where += ' AND i.customer_id = $2';
+        params.push(customerId);
+      }
       const result = await pool.query(`
         SELECT i.*, c.company_name as customer_name, c.primary_contact_email
         FROM invoices i
         LEFT JOIN customers c ON c.id = i.customer_id
-        WHERE i.company_id = $1
+        ${where}
         ORDER BY i.created_at DESC LIMIT 100
-      `, [companyId]);
+      `, params);
       return respond(200, result.rows);
     }
 
@@ -1851,6 +1885,13 @@ Return this JSON only:
     }
 
     if (method === 'GET' && path === '/elevators') {
+      // M-8a: Customer-role callers see only their own elevators.
+      const params = [companyId];
+      let where = 'WHERE e.company_id = $1';
+      if (authRole === 'customer') {
+        where += ' AND e.customer_id = $2';
+        params.push(customerId);
+      }
       const result = await pool.query(`
         SELECT e.*, c.company_name as customer_name,
           ml.service_date as last_service_date,
@@ -1861,22 +1902,79 @@ Return this JSON only:
         LEFT JOIN LATERAL (
           SELECT * FROM maintenance_logs WHERE elevator_id = e.id ORDER BY service_date DESC LIMIT 1
         ) ml ON true
-        WHERE e.company_id = $1
+        ${where}
         ORDER BY e.elevator_identifier
-      `, [companyId]);
+      `, params);
       return respond(200, result.rows);
     }
 
     if (method === 'POST' && path === '/tickets') {
-      const { elevator_id, title, description, priority, reported_by, customer_id } = JSON.parse(event.body || '{}');
+      const body = JSON.parse(event.body || '{}');
+      const { elevator_id, title, description, priority, reported_by } = body;
       if (!title) return respond(400, { error: 'title required' });
+
+      // Priority whitelist (rejects junk values like 'urgent_now_pls').
+      const VALID_PRIORITIES = new Set(['low','medium','high','emergency']);
+      let effectivePriority = (priority || 'medium').toLowerCase();
+      if (!VALID_PRIORITIES.has(effectivePriority)) effectivePriority = 'medium';
+
+      // M-8a: For Customer-role callers, ignore body customer_id and bind to the
+      // authenticated customerId. Also verify any elevator_id they reference
+      // belongs to them — otherwise a customer could file a ticket "from"
+      // another customer's elevator.
+      let effectiveCustomerId = body.customer_id || null;
+      if (authRole === 'customer') {
+        effectiveCustomerId = customerId;
+        if (elevator_id) {
+          const ev = await pool.query(
+            'SELECT id FROM elevators WHERE id=$1 AND customer_id=$2 AND company_id=$3 LIMIT 1',
+            [elevator_id, customerId, companyId]
+          );
+          if (!ev.rows.length) return respond(403, { error: 'forbidden_elevator' });
+        }
+
+        // CH-1: rate-limit customer-submitted 'emergency' to 3 per 24h.
+        // Real customer emergencies (stuck elevator, safety hazard) stay supported.
+        // 4th+ within 24h silently downgrades to 'high' and audit-logs the event so
+        // staff can spot abuse patterns. Internal users (Owner/Sales/Tech) skip
+        // this branch entirely — their emergency tickets are uncapped.
+        if (effectivePriority === 'emergency') {
+          const recent = await pool.query(
+            `SELECT COUNT(*)::int AS n FROM service_tickets
+             WHERE customer_id = $1 AND priority = 'emergency'
+               AND created_at > NOW() - INTERVAL '24 hours'`,
+            [customerId]
+          );
+          if (recent.rows[0].n >= 3) {
+            const originalPriority = effectivePriority;
+            effectivePriority = 'high';
+            // Non-fatal audit log. Failures here must never block the ticket.
+            try {
+              await pool.query(
+                `INSERT INTO activity_log (company_id, user_email, action, resource_type, resource_id, metadata)
+                 VALUES ($1, $2, 'emergency_downgraded', 'service_ticket', NULL, $3)`,
+                [companyId, reported_by || null, JSON.stringify({
+                  customer_id: customerId,
+                  original_priority: originalPriority,
+                  applied_priority: effectivePriority,
+                  reason: 'rate_limit_24h',
+                  cap: 3,
+                  count_in_window: recent.rows[0].n,
+                })]
+              );
+            } catch(le) { console.log('activity_log emergency_downgraded error:', le.message); }
+          }
+        }
+      }
+
       const count = await pool.query('SELECT COUNT(*) FROM service_tickets');
       const ticketNumber = 'SR-' + String(parseInt(count.rows[0].count) + 1).padStart(4, '0');
       const result = await pool.query(
         'INSERT INTO service_tickets (elevator_id, customer_id, ticket_number, title, description, priority, status, reported_by, company_id, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW()) RETURNING *',
-        [elevator_id||null, customer_id||null, ticketNumber, title, description, priority||'medium', 'open', reported_by||null, companyId]
+        [elevator_id||null, effectiveCustomerId, ticketNumber, title, description, effectivePriority, 'open', reported_by||null, companyId]
       );
-      // Create notification for new service request
+      // Create notification for new service request. Reads priority from the stored
+      // row (post-rate-limit) so a downgraded ticket fires 🔔 not 🚨.
       try {
         const ticketData = result.rows[0];
         const notifTitle = ticketData.priority === 'emergency'
@@ -1892,19 +1990,48 @@ Return this JSON only:
     }
 
     if (method === 'GET' && path === '/tickets') {
-      const result = await pool.query(`SELECT st.*, c.company_name as customer_name, e.elevator_identifier FROM service_tickets st LEFT JOIN customers c ON c.id = st.customer_id LEFT JOIN elevators e ON e.id = st.elevator_id WHERE st.company_id = $1 ORDER BY CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, st.created_at DESC`, [companyId]);
+      // M-8a: Customer-role callers see only their own tickets.
+      const params = [companyId];
+      let where = 'WHERE st.company_id = $1';
+      if (authRole === 'customer') {
+        where += ' AND st.customer_id = $2';
+        params.push(customerId);
+      }
+      const result = await pool.query(
+        `SELECT st.*, c.company_name as customer_name, e.elevator_identifier
+         FROM service_tickets st
+         LEFT JOIN customers c ON c.id = st.customer_id
+         LEFT JOIN elevators e ON e.id = st.elevator_id
+         ${where}
+         ORDER BY CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, st.created_at DESC`,
+        params
+      );
       return respond(200, result.rows);
     }
 
     if (method === 'GET' && path === '/maintenance') {
-      const result = await pool.query(`SELECT ml.*, e.elevator_identifier, c.company_name as customer_name FROM maintenance_logs ml LEFT JOIN elevators e ON e.id = ml.elevator_id LEFT JOIN customers c ON c.id = e.customer_id WHERE ml.company_id = $1 ORDER BY ml.service_date DESC LIMIT 100`, [companyId]);
+      // M-8a: Customer-role callers see only logs for elevators they own.
+      // Scoping happens via the LEFT JOIN to elevators (e.customer_id).
+      const params = [companyId];
+      let where = 'WHERE ml.company_id = $1';
+      if (authRole === 'customer') {
+        where += ' AND e.customer_id = $2';
+        params.push(customerId);
+      }
+      const result = await pool.query(
+        `SELECT ml.*, e.elevator_identifier, c.company_name as customer_name
+         FROM maintenance_logs ml
+         LEFT JOIN elevators e ON e.id = ml.elevator_id
+         LEFT JOIN customers c ON c.id = e.customer_id
+         ${where}
+         ORDER BY ml.service_date DESC LIMIT 100`,
+        params
+      );
       return respond(200, result.rows);
     }
 
-    if (method === 'GET' && path === '/invoices') {
-      const result = await pool.query('SELECT * FROM invoices WHERE company_id=$1 ORDER BY created_at DESC LIMIT 50', [companyId]);
-      return respond(200, result.rows);
-    }
+    // (Earlier duplicate GET /invoices handler at this position deleted 2026-04-27;
+    //  the canonical handler lives above near POST /invoices and is M-8a-scoped.)
 
     // Admin endpoint - get all companies (for your admin dashboard)
     if (method === 'GET' && path === '/admin/companies') {

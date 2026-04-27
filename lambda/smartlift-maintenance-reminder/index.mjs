@@ -1,8 +1,19 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import pg from 'pg';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const ses = new SESClient({ region: 'us-east-1' });
+
+// AWS RDS root CA bundle for TLS cert validation.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RDS_CA = (() => {
+  try { return readFileSync(join(__dirname, 'rds-ca.pem'), 'utf8'); }
+  catch { return null; }
+})();
+if (!RDS_CA) console.warn('[startup] rds-ca.pem missing — TLS will not validate cert');
 
 // DB credentials: prefer Secrets Manager (when DB_SECRET_ARN is set), fall back to env vars.
 async function loadDbConfig() {
@@ -21,7 +32,8 @@ async function loadDbConfig() {
            user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 }
 const _dbConfig = await loadDbConfig();
-const pool = new pg.Pool({ ..._dbConfig, ssl: { rejectUnauthorized: false }, max: 1 });
+const _ssl = RDS_CA ? { ca: RDS_CA, rejectUnauthorized: true } : { rejectUnauthorized: false };
+const pool = new pg.Pool({ ..._dbConfig, ssl: _ssl, max: 1 });
 
 export const handler = async (event) => {
   console.log('Running maintenance reminder check...');
@@ -35,7 +47,7 @@ export const handler = async (event) => {
         c.primary_contact_email,
         c.primary_contact_name,
         e.elevator_identifier,
-        comp.company_name as service_company,
+        comp.name as service_company,
         t.name as technician_name,
         t.email as technician_email
       FROM maintenance_schedules ms
@@ -55,7 +67,7 @@ export const handler = async (event) => {
         c.primary_contact_email,
         c.primary_contact_name,
         e.elevator_identifier,
-        comp.company_name as service_company,
+        comp.name as service_company,
         t.name as technician_name,
         t.email as technician_email
       FROM maintenance_schedules ms
@@ -74,7 +86,7 @@ export const handler = async (event) => {
         c.company_name as customer_name,
         c.primary_contact_email,
         e.elevator_identifier,
-        comp.company_name as service_company
+        comp.name as service_company
       FROM maintenance_schedules ms
       LEFT JOIN customers c ON c.id = ms.customer_id
       LEFT JOIN elevators e ON e.id = ms.elevator_id
