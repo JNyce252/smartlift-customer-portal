@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Users, Plus, Mail, Shield, Wrench, BarChart2, UserCheck, UserX, ChevronDown, X, CheckCircle, Clock, AlertCircle, Star, Edit2, Send } from 'lucide-react';
-import { authService } from '../../services/authService';
+import { authHeaders } from '../../services/authService';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -20,7 +20,7 @@ const CERTIFICATIONS = ['TDLR Licensed','CET','NAEC Member','OSHA 10','OSHA 30',
 const SPECIALIZATIONS = ['Traction Elevators','Hydraulic Elevators','Door Systems','Controls & Electrical','Safety Testing','TDLR Inspections','Modernization','Emergency Repair'];
 
 const TeamManagement = () => {
-  const { user, isOwner, getToken } = useAuth();
+  const { user, isOwner } = useAuth();
   const [tab, setTab] = useState('users');
   const [platformUsers, setPlatformUsers] = useState([]);
   const [technicians, setTechnicians] = useState([]);
@@ -35,15 +35,14 @@ const TeamManagement = () => {
   const [saving, setSaving] = useState(false);
   const [editTech, setEditTech] = useState(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (getToken() || authService.getIdToken()) };
-
+  // headers built per fetch via authHeaders() — see authService.js
   const fetchData = async () => {
     setLoading(true);
     try {
       const [users, techs, wo] = await Promise.all([
-        isOwner ? fetch(BASE_URL + '/team/users', { headers }).then(r => r.json()) : Promise.resolve([]),
-        fetch(BASE_URL + '/technicians', { headers }).then(r => r.json()),
-        fetch(BASE_URL + '/work-orders', { headers }).then(r => r.json()),
+        isOwner ? fetch(BASE_URL + '/team/users', { headers: authHeaders() }).then(r => r.json()) : Promise.resolve([]),
+        fetch(BASE_URL + '/technicians', { headers: authHeaders() }).then(r => r.json()),
+        fetch(BASE_URL + '/work-orders', { headers: authHeaders() }).then(r => r.json()),
       ]);
       setPlatformUsers(Array.isArray(users) ? users.filter(u => u.role !== 'customer') : []);
       setTechnicians(Array.isArray(techs) ? techs : []);
@@ -59,7 +58,7 @@ const TeamManagement = () => {
     setInviting(true);
     try {
       const res = await fetch(BASE_URL + '/team/users/invite', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ email: inviteForm.email, name: inviteForm.name, userRole: inviteForm.role })
       });
       const data = await res.json();
@@ -76,7 +75,7 @@ const TeamManagement = () => {
   const handleRoleChange = async (userEmail, newRole) => {
     try {
       await fetch(BASE_URL + '/team/users/' + encodeURIComponent(userEmail) + '/role', {
-        method: 'PATCH', headers, body: JSON.stringify({ role: newRole })
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ role: newRole })
       });
       fetchData();
     } catch(e) { console.error(e); }
@@ -85,7 +84,7 @@ const TeamManagement = () => {
   const handleToggleStatus = async (userEmail, enabled) => {
     try {
       await fetch(BASE_URL + '/team/users/' + encodeURIComponent(userEmail) + '/status', {
-        method: 'PATCH', headers, body: JSON.stringify({ enabled: !enabled })
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ enabled: !enabled })
       });
       fetchData();
     } catch(e) { console.error(e); }
@@ -96,7 +95,7 @@ const TeamManagement = () => {
     try {
       const url = editTech ? BASE_URL + '/technicians/' + editTech.id : BASE_URL + '/technicians';
       const method = editTech ? 'PATCH' : 'POST';
-      await fetch(url, { method, headers, body: JSON.stringify(techForm) });
+      await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(techForm) });
       setShowCreateTech(false);
       setEditTech(null);
       setTechForm({ name: '', email: '', phone: '', tdlr_license_number: '', certifications: [], specializations: [], status: 'active' });
