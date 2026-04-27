@@ -2,7 +2,7 @@
 
 _Generated 2026-04-27 from a deep read of the 7 customer-portal pages, the auth/services/routing surface that supports them, and the corresponding `lambda/smartlift-api` route handlers. Findings are file:line-grounded._
 
-> **Bottom line:** post the recent C-1..C-5 + H-1..H-8 + H-5 + H-6 + M-8a closures, the customer portal has no CRITICAL gaps. The remaining work is split between (a) a small set of HIGH findings that bite once tenant 2 onboards or a malicious customer probes the API, (b) a meaty MEDIUM list of consistency / info-disclosure / unfinished-feature items, and (c) LOW polish. The Stripe/billing flow is the single largest unfinished feature.
+> **Bottom line (updated 2026-04-27):** post the recent C-1..C-5 + H-1..H-8 + M-8a closures plus this session's customer-portal work (CH-1 priority cap + CH-2 contact-info de-hardcode), the customer portal has no CRITICAL gaps and only **CH-3** remains in HIGH (data over-exposure via `SELECT *`). The remaining work is a meaty MEDIUM list of consistency / info-disclosure / unfinished-feature items, plus LOW polish. The Stripe/billing flow is the single largest unfinished feature.
 
 ---
 
@@ -32,33 +32,18 @@ _None._
 
 ### HIGH — fix this week
 
-#### CH-1. `POST /tickets` accepts customer-controlled `priority` ('emergency' is amplified)
+#### CH-1. `POST /tickets` accepts customer-controlled `priority` ('emergency' is amplified) (**CLOSED 2026-04-27**)
 
-`src/pages/customer/ServiceRequest.jsx:99` submits `priority: form.priority` directly from the form. The form's `PRIORITY_OPTIONS` (lines 7–48) include `'emergency'`, which the Lambda's notification path (`lambda/smartlift-api/index.mjs` near line 1900–1905, post-M-8a edit) treats specially: the notification gets a `'🚨 Emergency Service Request'` title and `type='emergency'`, which the internal NotificationBell renders with red styling.
+**Closure:** Server-side priority whitelist (`{low,medium,high,emergency}`) plus customer-emergency rate-limit at 3/24h. The 4th+ emergency from the same `customer_id` within 24h silently downgrades to `'high'` and writes an `activity_log` row (`action='emergency_downgraded'`) carrying the original priority, applied priority, count-in-window, and reason — so staff have an audit trail for abuse pattern analysis. Internal users (Owner/Sales/Tech) skip the rate-limit entirely; their emergency tickets remain uncapped. Notification re-reads from the stored row so a downgraded ticket fires `🔔 New Service Request`, not `🚨 Emergency Service Request`. Real customer emergencies (stuck elevator, safety hazard) under the cap are unimpaired. Implementation: `lambda/smartlift-api/index.mjs` POST /tickets handler.
 
-A bored customer (or an angry one) can submit `priority: 'emergency'` for a non-emergency to demand staff attention — and once you have multiple customers, this becomes attention-spam. Worse, an attacker who guesses a customer JWT could fire emergency tickets in bursts.
+#### CH-2. Hardcoded internal staff email in customer-facing UI (**CLOSED 2026-04-27**)
 
-**Fix (Lambda-side):**
+**Closure:** All three customer pages now source contact info from the `company_profile` row that `GET /profile` returns:
+- `BillingPayments.jsx` — added `/profile` fetch alongside `/invoices`. The Pay Now CTA's `mailto:` uses `profile.email`. CTA is hidden entirely if `profile.email` is unset (avoids a broken link).
+- `Support.jsx` — Email Us button gates on `profile.email` being present; falls back to non-clickable "Contact your service provider" copy if missing. No more `'derald@swcabs.com'` literal in the fallback.
+- `ServiceRequest.jsx` — added `/profile` fetch. Emergency banner phone uses `profile.phone` (raw for display, digits-only for the `tel:` scheme). Banner button is conditional on the phone existing — if it's not set, the warning text shows without a clickable number rather than a stale one.
 
-```js
-const ALLOWED_CUSTOMER_PRIORITIES = new Set(['low','medium','high']);
-let effectivePriority = (priority || 'medium').toLowerCase();
-if (authRole === 'customer' && !ALLOWED_CUSTOMER_PRIORITIES.has(effectivePriority)) {
-  effectivePriority = 'high';  // cap at 'high'; only staff/owner can mark emergency
-}
-```
-
-Internal users (Owner/Sales/Technician/Staff) keep the full priority set including `'emergency'` for genuine cases.
-
-#### CH-2. Hardcoded internal staff email in customer-facing UI
-
-`src/pages/customer/BillingPayments.jsx:209` and `src/pages/customer/Support.jsx:142` both hardcode `derald@swcabs.com` as the contact email shown to customers. Three problems:
-
-1. **Tenant-2 blocker** — the moment you onboard a second elevator service company, every one of their customers sees Derald's email. Wrong tenant.
-2. **Internal-staff information disclosure** — even within Southwest Cabs, this exposes Derald's personal email to building owners who may already have his info, but should reach him via the company's support channel, not direct.
-3. **Maintenance burden** — if Derald changes role or leaves, two frontend files have to change.
-
-**Fix:** read from the `company_profile` row that `GET /profile` already returns. The customer portal already loads it (e.g., `CustomerDashboard.jsx:24`). Pipe `profile.email` through to `BillingPayments` and `Support` via context or props.
+For tenant 1 (Southwest Cabs), the customer-visible behavior is identical (the `company_profile` row already had `email = derald@swcabs.com` and `phone = 972-974-7005`). The fix is structural — when tenant 2 onboards, *their* `company_profile` row drives *their* customers' UI.
 
 #### CH-3. Within-tenant data over-exposure: customer-callable routes return `SELECT *`
 
