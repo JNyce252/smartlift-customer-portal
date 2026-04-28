@@ -12,6 +12,28 @@ import { Home, LogOut, Send, Sparkles, Clock, Info } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
+// Strip leftover markdown if Claude slips out of plain-text mode despite the
+// system prompt instruction. Belt-and-suspenders so the UI always reads clean.
+const stripMarkdown = (s) => {
+  if (typeof s !== 'string') return s;
+  return s
+    // **bold** and __bold__ → bold (keep the words, drop the markers)
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // *italic* and _italic_ — only when surrounded by word boundaries so we don't
+    // eat asterisks that are mid-word or part of identifiers
+    .replace(/(^|\s)\*([^*\s][^*]*[^*\s]|\S)\*(?=\s|[.,!?;:]|$)/g, '$1$2')
+    .replace(/(^|\s)_([^_\s][^_]*[^_\s]|\S)_(?=\s|[.,!?;:]|$)/g, '$1$2')
+    // Inline `code` → plain
+    .replace(/`([^`]+)`/g, '$1')
+    // Headers: drop leading hash markers but keep the heading text
+    .replace(/^#{1,6}\s+/gm, '')
+    // Bulleted lists: drop the leading marker, keep the line
+    .replace(/^[\s]*[-*•]\s+/gm, '')
+    // Numbered lists keep their numbers but strip extra punctuation
+    .replace(/^(\d+)\.\s+/gm, '$1. ');
+};
+
 const SUGGESTED_QUESTIONS = [
   'When was my last inspection?',
   'What service has been performed in the last 6 months?',
@@ -43,7 +65,8 @@ const AskSmarterlift = () => {
     setLoading(true);
     try {
       const result = await api.askChat(next);
-      setMessages([...next, { role: 'assistant', content: result.answer || "I'm not sure how to answer that." }]);
+      const cleaned = stripMarkdown(result.answer || "I'm not sure how to answer that.");
+      setMessages([...next, { role: 'assistant', content: cleaned }]);
     } catch (e) {
       setMessages([...next, { role: 'assistant', content: "I had trouble reaching the AI right now. Please try again in a moment, or contact your service provider for an immediate answer." }]);
     } finally {
