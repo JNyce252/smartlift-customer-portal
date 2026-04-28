@@ -2217,7 +2217,9 @@ Return this JSON only:
 
 
 
-    // GET /me — identity, role, preferences — called on every login
+    // GET /me — identity, role, preferences — called on every login.
+    // SuperAdmin has no tenant, so we skip the user_preferences upsert
+    // (company_id is NOT NULL on that table) and return synthetic identity.
     if (method === 'GET' && path === '/me') {
       const sub = getUserSub(event);
       const role = getUserRole(event);
@@ -2225,6 +2227,9 @@ Return this JSON only:
       const jwtPayload = decodeJWT(event);
       const email = jwtPayload.email || jwtPayload['cognito:username'] || null;
       const name = jwtPayload.name || jwtPayload['custom:name'] || email || null;
+      if (authRole === 'super_admin') {
+        return respond(200, { id: null, cognito_sub: sub, email, display_name: name, role: 'super_admin', email_again: email, name, company_id: null });
+      }
       const result = await pool.query(`
         INSERT INTO user_preferences (company_id, cognito_sub, email, display_name, last_active)
         VALUES ($1,$2,$3,$4,NOW())
@@ -2236,11 +2241,15 @@ Return this JSON only:
       return respond(200, { ...result.rows[0], role, email, name, company_id: companyId });
     }
 
-    // GET /me/preferences — load this user's saved preferences
+    // GET /me/preferences — load this user's saved preferences.
+    // SuperAdmin gets an empty placeholder so AuthContext on the frontend
+    // doesn't blow up trying to read .preferences.
     if (method === 'GET' && path === '/me/preferences') {
       const sub = getUserSub(event);
       if (!sub) return respond(400, { error: 'No user identity found' });
-
+      if (authRole === 'super_admin') {
+        return respond(200, { id: null, cognito_sub: sub, email: decodeJWT(event).email || null, preferences: {}, display_name: null, last_active: new Date().toISOString() });
+      }
       // Upsert — create record if first time this user logs in
       const result = await pool.query(`
         INSERT INTO user_preferences (company_id, cognito_sub, email, last_active)
@@ -2258,6 +2267,11 @@ Return this JSON only:
     if (method === 'PATCH' && path === '/me/preferences') {
       const sub = getUserSub(event);
       if (!sub) return respond(400, { error: 'No user identity found' });
+      // SuperAdmin doesn't persist preferences (no tenant row to attach to).
+      // Return a no-op success so the frontend doesn't blow up.
+      if (authRole === 'super_admin') {
+        return respond(200, { id: null, cognito_sub: sub, preferences: {}, last_active: new Date().toISOString() });
+      }
 
       const body = JSON.parse(event.body || '{}');
       const { key, value, display_name } = body;
@@ -2291,6 +2305,10 @@ Return this JSON only:
     if (method === 'PATCH' && path === '/me/preferences/bulk') {
       const sub = getUserSub(event);
       if (!sub) return respond(400, { error: 'No user identity found' });
+      // SuperAdmin no-op (no tenant to attach to).
+      if (authRole === 'super_admin') {
+        return respond(200, { id: null, cognito_sub: sub, preferences: {}, last_active: new Date().toISOString() });
+      }
 
       const body = JSON.parse(event.body || '{}');
       const { preferences } = body;

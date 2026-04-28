@@ -10,13 +10,16 @@ export const useAuth = () => {
 };
 
 
-// Decode role directly from Cognito idToken — no API call needed
+// Decode role directly from Cognito idToken — no API call needed.
+// SuperAdmin checked first: it's a platform-level role and must beat any
+// tenant-level membership the user might also have.
 const getRoleFromToken = (idToken) => {
   try {
     if (!idToken || typeof idToken !== 'string' || !idToken.includes('.')) return 'staff';
     const payload = JSON.parse(atob(idToken.split('.')[1]));
     const groups = payload['cognito:groups'] || [];
     const g = Array.isArray(groups) ? groups : String(groups).split(',').map(s => s.trim());
+    if (g.includes('SuperAdmin')) return 'super_admin';
     if (g.includes('Owners')) return 'owner';
     if (g.includes('Technicians')) return 'technician';
     if (g.includes('SalesOffice')) return 'sales';
