@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Wrench, FileText, DollarSign, ArrowUpDown, MessageSquare, Calendar, Clock, CheckCircle, LogOut, Phone, AlertCircle, ChevronRight, Shield, Bell, ArrowRight } from 'lucide-react';
+import { Wrench, FileText, DollarSign, ArrowUpDown, MessageSquare, Calendar, Clock, CheckCircle, LogOut, Phone, AlertCircle, ChevronRight, Shield, Bell, ArrowRight, Download, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { authService, authHeaders } from '../../services/authService';
+import ComplianceCard from '../../components/customer/ComplianceCard';
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL || 'https://4cc23kla34.execute-api.us-east-1.amazonaws.com/prod';
 
@@ -15,6 +16,17 @@ const CustomerDashboard = () => {
   const [profile, setProfile] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+
+  // O2: Trigger a snapshot .ics download. Customer can re-download anytime
+  // for fresh data. Subscribable URL (calendar app polls forever) is a v2.
+  const handleDownloadCalendar = async () => {
+    if (calendarBusy) return;
+    setCalendarBusy(true);
+    try { await api.downloadCalendar(); }
+    catch (e) { setError('Calendar download failed. Please try again.'); }
+    finally { setCalendarBusy(false); }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -112,9 +124,20 @@ const CustomerDashboard = () => {
                 : 'All systems operational — no upcoming service scheduled'}
             </p>
           </div>
-          <p className="text-gray-500 text-sm hidden lg:block">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-          </p>
+          <div className="hidden lg:flex items-center gap-3">
+            <p className="text-gray-500 text-sm">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            </p>
+            <button
+              onClick={handleDownloadCalendar}
+              disabled={calendarBusy}
+              title="Download an .ics file with your inspection deadlines and scheduled service. Import into Google or Outlook."
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-600 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+              {calendarBusy ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              {calendarBusy ? 'Preparing…' : 'Calendar'}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -191,6 +214,31 @@ const CustomerDashboard = () => {
             </div>
           ))}
         </div>
+
+        {/* B1+B2: Compliance Health Score + Certification Cliff */}
+        <ComplianceCard />
+
+        {/* A2: Ask Smarterlift hero — prominent entry to the AI Q&A page */}
+        <Link
+          to="/customer/ask"
+          className="block mb-8 rounded-2xl p-6 bg-gradient-to-br from-purple-600/30 via-blue-600/20 to-gray-800 border border-purple-500/30 hover:border-purple-400/50 hover:from-purple-600/40 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-105 transition-transform">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h3 className="text-white font-bold text-lg">Ask Smarterlift</h3>
+                <span className="text-[10px] uppercase tracking-wider text-purple-300 bg-purple-900/50 border border-purple-700/40 rounded-full px-2 py-0.5 font-semibold">AI</span>
+              </div>
+              <p className="text-gray-300 text-sm">
+                Natural-language Q&amp;A about your elevators, service history, invoices, and the TX inspection registry.
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-white group-hover:translate-x-1 transition-all flex-shrink-0" />
+          </div>
+        </Link>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

@@ -34,16 +34,61 @@ You've already done deep work on this project in prior sessions. Don't rediscove
 
 ```
 Last session date: 2026-04-27 (evening, second pass — continuation)
-Last actions:      Three closures back-to-back this session:
+Last actions:      MARATHON session — closed every remaining CRITICAL + HIGH AND
+                   shipped the entire customer-portal feature top-5:
 
-                   (1) Step 5C-redo: VPC migration + close Aurora SG. Last CRITICAL is done.
+                   (1) Step 5C-redo: VPC migration + close Aurora SG. Last CRITICAL done.
                    (2) H-5: dropped dead tables `activities`, `contacts`, `service_requests`
-                       via Aurora RDS Data API (HTTPS path; no SG ingress needed). Cross-tenant
-                       leak vectors removed at the schema level. db/schema.md updated.
+                       via Aurora RDS Data API. Cross-tenant leak vectors removed at schema level.
                    (3) H-6: hardened Cognito pool us-east-1_n7bsroYdL in place — sandbox tag
                        removed, DeletionProtection ACTIVE, MFA OPTIONAL (TOTP), group precedence
-                       fixed (Owners=1, Sales=2, Tech=3, Staff=10, Customers=20). No user
-                       migration, no frontend redeploy. Script: scripts/h6-harden-cognito-pool.sh.
+                       corrected. Script: scripts/h6-harden-cognito-pool.sh.
+                   (4) M-8a: customer-role within-tenant scoping in smartlift-api. /elevators,
+                       /tickets, /maintenance, /invoices, /documents now filter customer_id
+                       when role='customer'. POST /tickets force-binds customer_id and verifies
+                       elevator ownership. PATCH /profile 403s for customers. Verified via
+                       customer browser dashboard load.
+                   (5) Customer portal review: docs/CUSTOMER_PORTAL_REVIEW.md generated
+                       (3 HIGH, 9 MEDIUM, 10 LOW findings).
+                   (6) CH-1: server-side priority whitelist + customer-emergency rate-limit
+                       (3 per 24h, 4th+ silently downgrades to 'high' with activity_log audit).
+                   (7) CH-2: de-hardcoded derald@swcabs.com / phone in 3 customer pages
+                       (BillingPayments, Support, ServiceRequest). Now sourced from
+                       company_profile via GET /profile. Tenant-2 ready.
+                   (8) CH-3: customer-role queries enumerate columns instead of SELECT *.
+                       Drops risk_score, resolution_notes, internal cost, internal user emails,
+                       etc. CUSTOMER_COLUMNS constant near auth helpers in smartlift-api.
+                   (9) Repo organization: docs moved to docs/, scaffolding to archive/,
+                       expanded .gitignore + README.md.
+
+                   Customer-portal feature roadmap top-5 — all backend-deployed:
+                   (10) B1+B2: Compliance Health Score (gauge + per-elevator breakdown) +
+                        Certification Cliff Chart (Recharts ComposedChart, your inspections
+                        vs TX % monthly distribution). Endpoint: GET /me/compliance.
+                        Component: src/components/customer/ComplianceCard.jsx.
+                   (11) A1: Hidden Defect Cohort Predictions. SQL cohort against TDLR
+                        building_registry (148k rows) + Bedrock Claude Sonnet 4.5 with
+                        cohort-grounded prompt. 30-day cache in elevator_insights table.
+                        Endpoint: GET /me/elevator/:id/insights. Component:
+                        src/components/customer/ElevatorInsightsPanel.jsx.
+                   (12) O2: Renewal Calendar .ics export (snapshot download). Endpoint:
+                        GET /me/calendar.ics returning text/calendar. Frontend trigger:
+                        api.downloadCalendar() blob handler + button on dashboard header.
+                        Subscribable URL deferred to v2 (needs auth-NONE on API Gateway).
+                   (13) A2: AI Q&A Chat ("Ask Smarterlift"). Customer-data-grounded system
+                        prompt + Claude with 20-msg / 2000-char-each guardrails.
+                        Endpoint: POST /me/chat. Page: src/pages/customer/AskSmarterlift.jsx
+                        at /customer/ask. Hero card on the dashboard.
+                   (14) O1: Service History Timeline. Unified per-elevator event timeline
+                        (install + modernization + inspections + maintenance_logs +
+                        tickets created/completed + scheduled maintenance). PDF export via
+                        jsPDF. Endpoint: GET /me/elevator/:id/timeline. Page:
+                        src/pages/customer/ElevatorHistory.jsx at /customer/elevator/:id/history.
+                        MyElevators "View Service History" button now points here.
+
+                   Schema migrations this session (via Aurora RDS Data API):
+                   - DROP TABLE activities, contacts, service_requests (H-5).
+                   - CREATE TABLE elevator_insights (A1 cache, 30-day TTL).
 
                    Step 5C-redo details:
                    - Created private subnets smartlift-private-1a (172.31.96.0/20,
@@ -72,35 +117,71 @@ Last actions:      Three closures back-to-back this session:
                    - Scripts (idempotent): scripts/vpc-phase-{a-infra,b0-iam-vpc,b-lambdas,
                      d-close-aurora-sg}.sh. State in scripts/.vpc-phase-a-state.json.
 
-Next action:       No CRITICALs or HIGHs left. The next chunk by priority is Step 7 / M-8a
-                   (within-tenant customer scoping) — the customer portal frontend hits
-                   internal routes filtered only by company_id, so a Customer-role user sees
-                   the entire fleet their service company services rather than just their own.
-                   Lambda fix in 6 routes: /elevators, /tickets, /maintenance, /invoices,
-                   /documents, /profile. Add `WHERE customer_id = $customerId` when role is
-                   'customer'. Or if you'd rather: M-3 (Aurora deletion protection + Multi-AZ
-                   prep) is a 5-min cheap insurance.
+Next action:       PUSH THE WHOLE BAG. There's a substantial undeployed frontend pile
+                   waiting on `git push`. Everything backend-side is already live.
 
-State of original SECURITY.md findings:
+                   What's pending push (ships in one Amplify rebuild):
+                     - Frontend code: CH-2 customer pages (BillingPayments, Support,
+                       ServiceRequest); ComplianceCard widget + dashboard mount;
+                       ElevatorInsightsPanel on MyElevators; Calendar download button on
+                       dashboard; AskSmarterlift page + dashboard hero card; ElevatorHistory
+                       page + redirected "View Service History" button.
+                     - Repo reorganization: docs/, archive/, expanded .gitignore, real README.
+                     - Doc updates: SECURITY.md, CUSTOMER_PORTAL_REVIEW.md (new),
+                       CUSTOMER_PORTAL_FEATURES.md (new), SESSION_TEMPLATE.md.
+                   Single commit, single push.
+
+                   After the push lands and Amplify rebuilds (~3 min), test loop is:
+                     1. Sign in as testcustomer@smarterlift.app at smarterlift.app
+                     2. Dashboard renders with: Compliance gauge widget, Ask Smarterlift
+                        hero card, "Calendar" button in header.
+                     3. Click "Ask Smarterlift" → chat page with 6 suggested questions
+                        → ask one → Claude answers (~5-8s).
+                     4. Back to /customer/elevators → expand an elevator → AI Insights
+                        Panel auto-loads (~10s first time, instant after thanks to cache)
+                     5. Click "View Service History" → unified timeline + PDF export.
+
+                   Open work AFTER the push, all MEDIUM or below:
+                     - CM-1 Stripe wiring (or remove "Pay Now" stub in BillingPayments).
+                     - CM-5 Customer profile editor (no /me/customer GET+PATCH today).
+                     - M-3 Aurora DeletionProtection=true + Multi-AZ.
+                     - O2 v2 Subscribable calendar URL (token-auth public endpoint).
+                     - Other features in docs/CUSTOMER_PORTAL_FEATURES.md (B3, B4, A3, O3,
+                       O4, E1-E3) — pick by ROI when you're ready.
+
+State of original SECURITY.md findings (management portal):
    CRITICAL:  5/5 closed
    HIGH:     8/8 closed
-   MEDIUM:   5/10 closed  (M-3 deletion protect / multi-AZ, M-4 PI, M-7 per-tenant SES,
-                          M-8 bundle keys, M-8a customer scoping, M-9 cross-tenant scorer,
-                          M-10 cosmetic)
+   MEDIUM:   6/10 closed  (M-1 errors, M-2 deletion protect, M-3 multi-AZ open,
+                          M-4 PI, M-7 per-tenant SES, M-8 bundle keys,
+                          M-8a customer scoping CLOSED, M-9 cross-tenant scorer, M-10 cosmetic)
    LOW:      4/10 closed  (assorted cleanups)
 
+State of CUSTOMER_PORTAL_REVIEW.md findings (customer portal):
+   CRITICAL:  0/0
+   HIGH:     3/3 closed   (CH-1 priority cap, CH-2 contact info, CH-3 column enumeration)
+   MEDIUM:   0/9 closed   (CM-1 Stripe stub, CM-2 fetch-to-api.js, CM-3 file_url validation,
+                          CM-4 JSON.parse hardening, CM-5 customer profile editor,
+                          CM-6 Support category whitelist, CM-7 /tickets ?limit=,
+                          CM-8 PrivateRoute redirect, CM-9 / catch-all)
+   LOW:      0/10 closed  (assorted polish)
+
 Open items by priority:
-  - Step 7 / M-8a (MEDIUM)              — within-tenant customer scoping (Customer-role users
-                                          currently see all data for their service company)
+  - CM-1 (MEDIUM)                       — Stripe wiring OR remove "Pay Now" stub from
+                                          BillingPayments. ~5 min remove vs ~1 day wire.
+  - CM-5 (MEDIUM)                       — customer profile editor (no /me/customer GET+PATCH
+                                          today; customer can't update own contact info).
   - M-3 (MEDIUM)                        — Aurora DeletionProtection=true + Multi-AZ; if you
-                                          go Multi-AZ, also add a second NAT in 1b for HA
+                                          go Multi-AZ, also add a second NAT in 1b for HA.
+  - CM-2 (MEDIUM)                       — normalize 4 direct fetch() calls in customer pages
+                                          to api.js wrapper. Mechanical.
+  - CM-3, CM-4, CM-6..CM-9              — see docs/CUSTOMER_PORTAL_REVIEW.md
   - Optional H-6 follow-up (LOW)        — step up MFA from OPTIONAL to REQUIRED for Owners-
                                           only via admin-set-user-mfa-preference. Strongly
                                           recommended before tenant 2 onboards.
-  - L-2..L-4 (LOW)                      — repo cleanup: stale index.mjs at root, orphan
-                                          Documents.jsx / Support.jsx / TDLRIntelligence.jsx
   - Step 1.2 (LOW)                      — tighten OPTIONS preflight CORS on the 80 routes
                                           (cosmetic; real responses are origin-locked)
+  - Customer-portal LOWs (CL-1..CL-10)  — see docs/CUSTOMER_PORTAL_REVIEW.md
   - Cleanup (LOW)                       — `tcp/22 from 52.95.4.19/32` ingress on Aurora SG
                                           is leftover, not in use; remove. Also: split VPC
                                           interface endpoints onto a dedicated endpoint SG

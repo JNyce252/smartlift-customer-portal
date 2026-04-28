@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Home, LogOut, AlertCircle, CheckCircle, Wrench, Clock, ChevronDown, ChevronUp, Calendar, Hash, Layers, Gauge, ArrowUpDown, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import ElevatorInsightsPanel from '../../components/customer/ElevatorInsightsPanel';
 
 const MyElevators = () => {
   const { user, logout } = useAuth();
@@ -242,12 +243,20 @@ const MyElevators = () => {
                         </div>
                       )}
 
+                      {/* A1: AI insights — mounts only when this elevator is expanded.
+                          That keeps Bedrock cost down (only fetches for elevators users
+                          actually open). Server-side cache holds 30 days. */}
+                      <ElevatorInsightsPanel elevatorId={elevator.id} />
+
                       <div className="flex gap-3">
                         <Link to={`/customer/service-request?elevator=${elevator.id}`}
                           className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium text-center transition-colors">
                           Request Service
                         </Link>
-                        <Link to="/customer/maintenance"
+                        {/* O1: per-elevator timeline page replaces the cross-fleet
+                            maintenance view here. The fleet view still exists at
+                            /customer/maintenance for users who want it. */}
+                        <Link to={`/customer/elevator/${elevator.id}/history`}
                           className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium text-center transition-colors">
                           View Service History
                         </Link>

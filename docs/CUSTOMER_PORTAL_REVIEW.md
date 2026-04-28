@@ -2,7 +2,7 @@
 
 _Generated 2026-04-27 from a deep read of the 7 customer-portal pages, the auth/services/routing surface that supports them, and the corresponding `lambda/smartlift-api` route handlers. Findings are file:line-grounded._
 
-> **Bottom line (updated 2026-04-27):** post the recent C-1..C-5 + H-1..H-8 + M-8a closures plus this session's customer-portal work (CH-1 priority cap + CH-2 contact-info de-hardcode), the customer portal has no CRITICAL gaps and only **CH-3** remains in HIGH (data over-exposure via `SELECT *`). The remaining work is a meaty MEDIUM list of consistency / info-disclosure / unfinished-feature items, plus LOW polish. The Stripe/billing flow is the single largest unfinished feature.
+> **Bottom line (updated 2026-04-27, CH-3 done):** post the recent C-1..C-5 + H-1..H-8 + M-8a closures plus this session's customer-portal work (CH-1 priority cap + CH-2 contact-info de-hardcode + CH-3 column enumeration), **the customer portal has no CRITICAL or HIGH findings remaining.** Remaining work is a MEDIUM list of consistency / info-disclosure / unfinished-feature items, plus LOW polish. The Stripe/billing flow is the single largest unfinished feature.
 
 ---
 
@@ -45,29 +45,24 @@ _None._
 
 For tenant 1 (Southwest Cabs), the customer-visible behavior is identical (the `company_profile` row already had `email = derald@swcabs.com` and `phone = 972-974-7005`). The fix is structural — when tenant 2 onboards, *their* `company_profile` row drives *their* customers' UI.
 
-#### CH-3. Within-tenant data over-exposure: customer-callable routes return `SELECT *`
+#### CH-3. Within-tenant data over-exposure: customer-callable routes return `SELECT *` (**CLOSED 2026-04-27**)
 
-The post-M-8a queries correctly filter `WHERE customer_id = $X` for customer-role callers, but they still `SELECT e.*` / `SELECT st.*` / `SELECT i.*` / `SELECT ml.*`. Several columns on those tables exist for internal use only — a customer hitting their own browser DevTools sees fields that exceed their need-to-know:
+**Closure:** Customer-role callers on the 5 affected GET handlers now receive a curated column list instead of `SELECT *`. Internal users (Owner/Sales/Tech/Staff) still see `*` — the change is gated on `authRole === 'customer'`. Centralized in a `CUSTOMER_COLUMNS` constant near the auth helpers in `lambda/smartlift-api/index.mjs`, so adding/removing customer-visible fields is a one-line edit per table.
 
-| Table | Columns leaked to customer (likely) |
+| Table | Columns dropped for Customer-role callers |
 |---|---|
-| `elevators` | `risk_score` (internal AI scoring), `notes` (could contain sales/ops commentary), `next_inspection_date` (operational, may be aspirational) |
-| `service_tickets` | `assigned_technician` (internal staff name), `resolution_notes` (internal commentary) |
-| `maintenance_logs` | `cost` (if it includes internal markup), internal technician notes |
-| `invoices` | `notes` (may contain internal commentary) |
-| `documents` | `notes`, `created_by` (internal user email) |
+| `elevators` | `risk_score`, `notes`, `created_at`, `updated_at`, `company_id` |
+| `service_tickets` | `resolution_notes`, `assigned_technician_id`, `company_id` |
+| `maintenance_logs` | `cost`, `company_id` |
+| `invoices` | `notes`, `company_id` |
+| `documents` | `notes`, `created_by`, `prospect_id`, `company_id` |
 
-The data is the customer's own, so this isn't a multi-tenant leak — it's an information-disclosure-within-tenant. Realistic risk: customer reads the elevator service company's internal notes about them via DevTools.
+Kept for customers (deliberate product decisions worth flagging):
+- `service_tickets.assigned_technician` (name) — most service businesses show the customer who their tech is. Toggle to drop if product disagrees.
+- `invoices.line_items` — required for itemized invoice display.
+- `elevators.modernization_needed`, `parts_history` — informational; customers benefit from seeing modernization signals.
 
-**Fix:** explicitly enumerate column lists for customer-scoped responses. E.g., for `GET /elevators`:
-
-```js
-const customerColumns = `e.id, e.customer_id, e.elevator_identifier, e.manufacturer, e.model, e.install_date, e.capacity_lbs, e.floors_served, e.status, e.tdlr_certificate_number, e.last_inspection_date, e.next_inspection_date`;
-const internalColumns = `e.*`;  // existing
-const cols = authRole === 'customer' ? customerColumns : internalColumns;
-```
-
-Audit each customer-callable route similarly. ~30 minutes total work, splits cleanly with the existing `authRole === 'customer'` checks.
+Verified via Data API: the customer-column SELECT against ELV-001 (Otis Gen2) returns the curated row with no `risk_score` in the response.
 
 ---
 
