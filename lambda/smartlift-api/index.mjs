@@ -181,24 +181,46 @@ const getAuthContext = async (event, pool) => {
     return { companyId: null, customerId: null, role: 'super_admin' };
   }
 
-  // 1. Internal user — email lookup in company_users
+  // Subscription gate: list of company.status values that allow sign-in.
+  // 'past_due' is allowed so the tenant can sign in and update payment; everyone
+  // else (cancelled, paused, suspended) is bounced before the request hits any
+  // route handler. SuperAdmin is exempt — they have no tenant.
+  const ALLOWED_COMPANY_STATUSES = new Set(['active', 'trialing', 'past_due']);
+
+  // 1. Internal user — email lookup in company_users + companies.status check.
   if (email) {
     const r = await pool.query(
-      'SELECT company_id FROM company_users WHERE email = $1 AND status = $2 LIMIT 1',
+      `SELECT cu.company_id, COALESCE(c.status,'active') AS company_status
+         FROM company_users cu
+         JOIN companies c ON c.id = cu.company_id
+        WHERE cu.email = $1 AND cu.status = $2
+        LIMIT 1`,
       [email, 'active']
     );
     if (r.rows.length && r.rows[0].company_id != null) {
+      if (!ALLOWED_COMPANY_STATUSES.has(r.rows[0].company_status)) {
+        throw new AuthError(`tenant_${r.rows[0].company_status}`);
+      }
       return { companyId: r.rows[0].company_id, customerId: null, role: 'internal' };
     }
   }
 
-  // 2. Portal customer — Cognito sub lookup in customers.cognito_user_id
+  // 2. Portal customer — Cognito sub lookup in customers + companies.status check.
   if (sub) {
     const r = await pool.query(
-      "SELECT id, company_id FROM customers WHERE cognito_user_id = $1 AND COALESCE(account_status,'active') = 'active' AND archived = FALSE LIMIT 1",
+      `SELECT cu.id, cu.company_id, COALESCE(c.status,'active') AS company_status
+         FROM customers cu
+         JOIN companies c ON c.id = cu.company_id
+        WHERE cu.cognito_user_id = $1
+          AND COALESCE(cu.account_status,'active') = 'active'
+          AND cu.archived = FALSE
+        LIMIT 1`,
       [sub]
     );
     if (r.rows.length && r.rows[0].company_id != null) {
+      if (!ALLOWED_COMPANY_STATUSES.has(r.rows[0].company_status)) {
+        throw new AuthError(`tenant_${r.rows[0].company_status}`);
+      }
       return { companyId: r.rows[0].company_id, customerId: r.rows[0].id, role: 'customer' };
     }
   }
@@ -3019,13 +3041,16 @@ Return 3-5 watch_areas, ordered priority high→low. Be SPECIFIC to elevator age
       return respond(403, { error: 'super_admin_required' });
     }
 
-    // GET /admin/dashboard — KPI counts for the home dashboard.
+    // GET /admin/dashboard — KPI counts + 14-day trend sparklines + per-tenant
+    // brief + AI insights count + DB heartbeat. Single payload powers the
+    // entire founder console without secondary fetches.
     if (method === 'GET' && path === '/admin/dashboard') {
-      const [tenants, users, customers, activeRecent, ticketsOpen, ticketsEmerg, recentActivity] = await Promise.all([
+      const [tenants, users, customers, activeRecent, ticketsOpen, ticketsEmerg, recentActivity,
+             activity14d, activeUsers14d, tenantsBrief, aiInsights, dbNow] = await Promise.all([
         pool.query('SELECT COUNT(*)::int AS n FROM companies'),
         pool.query("SELECT COUNT(*)::int AS n FROM company_users WHERE COALESCE(status,'active')='active'"),
         pool.query("SELECT COUNT(*)::int AS n FROM customers WHERE COALESCE(account_status,'active')='active' AND archived = FALSE"),
-        pool.query("SELECT COUNT(DISTINCT cognito_sub)::int AS n_24h, COUNT(DISTINCT cognito_sub) FILTER (WHERE last_active > NOW() - INTERVAL '7 days')::int AS n_7d FROM user_preferences WHERE last_active > NOW() - INTERVAL '24 hours'"),
+        pool.query("SELECT COUNT(DISTINCT cognito_sub) FILTER (WHERE last_active > NOW() - INTERVAL '24 hours')::int AS n_24h, COUNT(DISTINCT cognito_sub) FILTER (WHERE last_active > NOW() - INTERVAL '7 days')::int AS n_7d FROM user_preferences"),
         pool.query("SELECT COUNT(*)::int AS n FROM service_tickets WHERE status IN ('open','in_progress')"),
         pool.query("SELECT COUNT(*)::int AS n FROM service_tickets WHERE priority='emergency' AND created_at > NOW() - INTERVAL '24 hours'"),
         pool.query(`SELECT al.id, al.company_id, al.user_email::text AS user_email, al.action::text AS action,
@@ -3033,8 +3058,45 @@ Return 3-5 watch_areas, ordered priority high→low. Be SPECIFIC to elevator age
                            c.name::text AS company_name
                     FROM activity_log al
                     LEFT JOIN companies c ON c.id = al.company_id
-                    ORDER BY al.created_at DESC LIMIT 8`),
+                    ORDER BY al.created_at DESC LIMIT 12`),
+        pool.query(`SELECT TO_CHAR(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+                    FROM activity_log WHERE created_at > NOW() - INTERVAL '14 days'
+                    GROUP BY 1 ORDER BY 1`),
+        pool.query(`SELECT TO_CHAR(date_trunc('day', last_active), 'YYYY-MM-DD') AS day,
+                           COUNT(DISTINCT cognito_sub)::int AS count
+                    FROM user_preferences WHERE last_active > NOW() - INTERVAL '14 days'
+                    GROUP BY 1 ORDER BY 1`),
+        pool.query(`SELECT c.id, c.name::text, COALESCE(c.status,'active')::text AS status,
+                           c.created_at,
+                           COALESCE(uc.n,0)::int AS user_count,
+                           COALESCE(cc.n,0)::int AS customer_count,
+                           COALESCE(tc.n,0)::int AS open_tickets,
+                           COALESCE(ec.n,0)::int AS open_emergencies,
+                           la.last_activity
+                    FROM companies c
+                    LEFT JOIN (SELECT company_id, COUNT(*) n FROM company_users WHERE COALESCE(status,'active')='active' GROUP BY company_id) uc ON uc.company_id=c.id
+                    LEFT JOIN (SELECT company_id, COUNT(*) n FROM customers WHERE COALESCE(account_status,'active')='active' AND archived=FALSE GROUP BY company_id) cc ON cc.company_id=c.id
+                    LEFT JOIN (SELECT company_id, COUNT(*) n FROM service_tickets WHERE status IN ('open','in_progress') GROUP BY company_id) tc ON tc.company_id=c.id
+                    LEFT JOIN (SELECT company_id, COUNT(*) n FROM service_tickets WHERE priority='emergency' AND status IN ('open','in_progress') GROUP BY company_id) ec ON ec.company_id=c.id
+                    LEFT JOIN (SELECT company_id, MAX(created_at) AS last_activity FROM activity_log GROUP BY company_id) la ON la.company_id=c.id
+                    ORDER BY c.created_at DESC LIMIT 6`),
+        pool.query(`SELECT COUNT(*)::int AS n_30d, COUNT(*) FILTER (WHERE generated_at > NOW() - INTERVAL '24 hours')::int AS n_24h FROM elevator_insights`).catch(() => ({ rows: [{ n_30d: 0, n_24h: 0 }] })),
+        pool.query("SELECT NOW() AS now, EXTRACT(EPOCH FROM (NOW() - pg_postmaster_start_time()))::int AS uptime_seconds"),
       ]);
+
+      // Pad sparkline series to a full 14 days so the chart starts on a real day
+      // even when there are gaps. Returns an array of 14 ints, oldest → newest.
+      const padDays = (rows, days = 14) => {
+        const map = Object.fromEntries(rows.map(r => [r.day, r.count]));
+        const out = [];
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date(); d.setUTCDate(d.getUTCDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          out.push({ day: key, count: map[key] || 0 });
+        }
+        return out;
+      };
+
       return respond(200, {
         tenants_total: tenants.rows[0].n,
         users_total: users.rows[0].n,
@@ -3043,7 +3105,14 @@ Return 3-5 watch_areas, ordered priority high→low. Be SPECIFIC to elevator age
         active_7d: activeRecent.rows[0]?.n_7d || 0,
         tickets_open: ticketsOpen.rows[0].n,
         tickets_emergency_24h: ticketsEmerg.rows[0].n,
+        ai_insights_30d: aiInsights.rows[0]?.n_30d || 0,
+        ai_insights_24h: aiInsights.rows[0]?.n_24h || 0,
         recent_activity: recentActivity.rows,
+        activity_14d: padDays(activity14d.rows),
+        active_users_14d: padDays(activeUsers14d.rows),
+        tenants_brief: tenantsBrief.rows,
+        db_now: dbNow.rows[0].now,
+        db_uptime_seconds: dbNow.rows[0].uptime_seconds,
       });
     }
 
