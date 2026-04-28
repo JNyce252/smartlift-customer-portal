@@ -30,6 +30,9 @@ import Documents from './pages/customer/Documents';
 import Support from './pages/customer/Support';
 import AskSmarterlift from './pages/customer/AskSmarterlift';
 import ElevatorHistory from './pages/customer/ElevatorHistory';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminTenants from './pages/admin/AdminTenants';
+import AdminActivity from './pages/admin/AdminActivity';
 
 function App() {
   return (
@@ -63,6 +66,11 @@ function App() {
           <Route path="/customer/support" element={<PrivateRoute requiredRole="customer"><Support /></PrivateRoute>} />
           <Route path="/customer/ask" element={<PrivateRoute requiredRole="customer"><AskSmarterlift /></PrivateRoute>} />
           <Route path="/customer/elevator/:id/history" element={<PrivateRoute requiredRole="customer"><ElevatorHistory /></PrivateRoute>} />
+          {/* Platform admin console — gated to SuperAdmin role only */}
+          <Route path="/admin/dashboard" element={<PrivateRoute requiredRole="super_admin"><AdminDashboard /></PrivateRoute>} />
+          <Route path="/admin/tenants"   element={<PrivateRoute requiredRole="super_admin"><AdminTenants /></PrivateRoute>} />
+          <Route path="/admin/activity"  element={<PrivateRoute requiredRole="super_admin"><AdminActivity /></PrivateRoute>} />
+          <Route path="/admin"           element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

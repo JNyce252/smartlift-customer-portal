@@ -58,6 +58,19 @@ export const api = {
   // See docs/CUSTOMER_PORTAL_FEATURES.md feature O1.
   getElevatorTimeline: (id) => request(`/me/elevator/${id}/timeline`),
 
+  // ===== Platform admin (super_admin only) =====
+  getAdminDashboard: () => request('/admin/dashboard'),
+  getAdminTenants:   () => request('/admin/tenants'),
+  getAdminActivity:  (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.company_id) qs.set('company_id', params.company_id);
+    if (params.action)     qs.set('action', params.action);
+    if (params.before)     qs.set('before', params.before);
+    if (params.limit)      qs.set('limit', params.limit);
+    const q = qs.toString();
+    return request(`/admin/activity${q ? '?' + q : ''}`);
+  },
+
   // O2: Renewal Calendar — fetches the customer's .ics and triggers a browser
   // download. Non-JSON response, so this bypasses the standard request() wrapper.
   // See docs/CUSTOMER_PORTAL_FEATURES.md feature O2. (v2: subscribable URL.)

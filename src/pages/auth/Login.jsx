@@ -17,10 +17,19 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // Role → home-route resolver. Super admin gets the platform admin console;
+  // internal team members get the management portal; everyone else (customer)
+  // gets the customer portal.
+  const homeFor = (role) => {
+    if (role === 'super_admin') return '/admin/dashboard';
+    if (['owner','technician','sales','staff','company'].includes(role)) return '/internal/dashboard';
+    return '/customer/dashboard';
+  };
+
   useEffect(() => {
     setMounted(true);
     if (isAuthenticated && user) {
-      navigate(['owner','technician','sales','staff','company'].includes(user.role) ? '/internal/dashboard' : '/customer/dashboard');
+      navigate(homeFor(user.role));
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -35,7 +44,7 @@ const Login = () => {
     setLoading(true);
     try {
       const userData = await login(formData.email, formData.password);
-      navigate(['owner','technician','sales','staff','company'].includes(userData.role) ? '/internal/dashboard' : '/customer/dashboard');
+      navigate(homeFor(userData.role));
     } catch (err) {
       setError(err.message || 'Invalid email or password');
     } finally {

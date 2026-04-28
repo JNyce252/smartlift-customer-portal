@@ -19,8 +19,10 @@ class AuthService {
         onSuccess: (result) => {
           const payload = result.getIdToken().payload;
           const groups = payload['cognito:groups'] || [];
+          // SuperAdmin checked first — platform-level role beats any tenant role.
           let role = 'staff';
-          if (groups.includes('Customers')) role = 'customer';
+          if (groups.includes('SuperAdmin')) role = 'super_admin';
+          else if (groups.includes('Customers')) role = 'customer';
           else if (groups.includes('Owners')) role = 'owner';
           else if (groups.includes('Technicians')) role = 'technician';
           else if (groups.includes('SalesOffice')) role = 'sales';

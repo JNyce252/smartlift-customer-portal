@@ -171,7 +171,15 @@ const getAuthContext = async (event, pool) => {
   }
   const email = payload.email || payload['cognito:username'] || null;
   const sub = payload.sub || null;
+  const groups = Array.isArray(payload['cognito:groups']) ? payload['cognito:groups'] : [];
   if (!email && !sub) throw new AuthError('token_missing_identity_claims');
+
+  // 0. SuperAdmin — platform-level user, no tenant scope. Checked first so the
+  // platform owner doesn't need a row in company_users or customers. Routes
+  // under /admin/* enforce role==='super_admin' explicitly.
+  if (groups.includes('SuperAdmin')) {
+    return { companyId: null, customerId: null, role: 'super_admin' };
+  }
 
   // 1. Internal user — email lookup in company_users
   if (email) {
@@ -2595,6 +2603,26 @@ Return this JSON only:
         stParams
       );
 
+      // Future maintenance from completed-log "next_service_date" hints.
+      // This is what powers the dashboard's "Next Service: 75d" tile, so we
+      // mirror it into the calendar to keep the two views consistent.
+      const mlParams = [companyId];
+      let mlScope = 'ml.company_id = $1 AND e.customer_id IS NOT NULL';
+      if (authRole === 'customer') {
+        mlScope += ' AND e.customer_id = $2';
+        mlParams.push(customerId);
+      }
+      const mlRes = await pool.query(
+        `SELECT ml.id, ml.next_service_date, ml.service_type,
+                ml.technician_name, e.elevator_identifier
+         FROM maintenance_logs ml
+         LEFT JOIN elevators e ON e.id = ml.elevator_id
+         WHERE ${mlScope}
+           AND ml.next_service_date IS NOT NULL
+           AND ml.next_service_date >= CURRENT_DATE`,
+        mlParams
+      );
+
       // Customer + service-company info for LOCATION + ORGANIZER fields.
       let customerInfo = null;
       if (authRole === 'customer') {
@@ -2700,6 +2728,30 @@ Return this JSON only:
           'TRANSP:OPAQUE',
           'END:VEVENT',
         ].join('\r\n'));
+      }
+
+      // Next-service hints from completed maintenance_logs rows. Same logic the
+      // dashboard's "Next Service" tile uses, so the calendar matches the UI.
+      for (const ml of mlRes.rows) {
+        const date = new Date(ml.next_service_date);
+        const dStart = fmtDate(date);
+        const dEnd   = fmtDate(new Date(date.getTime() + 86400000));
+        const id = ml.elevator_identifier || 'Elevator';
+        const svc = ml.service_type || 'Maintenance service';
+        events.push([
+          'BEGIN:VEVENT',
+          `UID:next-service-${ml.id}-${dStart}@smarterlift.app`,
+          `DTSTAMP:${dtstamp}`,
+          `DTSTART;VALUE=DATE:${dStart}`,
+          `DTEND;VALUE=DATE:${dEnd}`,
+          `SUMMARY:${icsEscape(`Next ${svc.toLowerCase()} — ${id}`)}`,
+          `DESCRIPTION:${icsEscape(`${svc} due for ${id}.${ml.technician_name ? ' Last serviced by ' + ml.technician_name + '.' : ''} Service partner: ${serviceCompany.name}.`)}`,
+          customerInfo?.address ? `LOCATION:${icsEscape([customerInfo.address, customerInfo.city, customerInfo.state].filter(Boolean).join(', '))}` : null,
+          'CATEGORIES:Maintenance,Scheduled',
+          'STATUS:CONFIRMED',
+          'TRANSP:OPAQUE',
+          'END:VEVENT',
+        ].filter(Boolean).join('\r\n'));
       }
 
       const calName = authRole === 'customer'
@@ -2939,6 +2991,95 @@ Return 3-5 watch_areas, ordered priority high→low. Be SPECIFIC to elevator age
       });
     }
 
+
+    // ==================== ADMIN CONSOLE (super_admin only) ====================
+    // All /admin/* routes require role='super_admin'. SuperAdmins bypass tenant
+    // scope and see all data. Returns 403 for any other role so a curious
+    // Owner can't poke around. See docs/CUSTOMER_PORTAL_FEATURES.md.
+
+    if (path.startsWith('/admin') && authRole !== 'super_admin') {
+      return respond(403, { error: 'super_admin_required' });
+    }
+
+    // GET /admin/dashboard — KPI counts for the home dashboard.
+    if (method === 'GET' && path === '/admin/dashboard') {
+      const [tenants, users, customers, activeRecent, ticketsOpen, ticketsEmerg, recentActivity] = await Promise.all([
+        pool.query('SELECT COUNT(*)::int AS n FROM companies'),
+        pool.query("SELECT COUNT(*)::int AS n FROM company_users WHERE COALESCE(status,'active')='active'"),
+        pool.query("SELECT COUNT(*)::int AS n FROM customers WHERE COALESCE(account_status,'active')='active' AND archived = FALSE"),
+        pool.query("SELECT COUNT(DISTINCT cognito_sub)::int AS n_24h, COUNT(DISTINCT cognito_sub) FILTER (WHERE last_active > NOW() - INTERVAL '7 days')::int AS n_7d FROM user_preferences WHERE last_active > NOW() - INTERVAL '24 hours'"),
+        pool.query("SELECT COUNT(*)::int AS n FROM service_tickets WHERE status IN ('open','in_progress')"),
+        pool.query("SELECT COUNT(*)::int AS n FROM service_tickets WHERE priority='emergency' AND created_at > NOW() - INTERVAL '24 hours'"),
+        pool.query(`SELECT al.id, al.company_id, al.user_email::text AS user_email, al.action::text AS action,
+                           al.resource_type::text AS resource_type, al.resource_id, al.created_at,
+                           c.name::text AS company_name
+                    FROM activity_log al
+                    LEFT JOIN companies c ON c.id = al.company_id
+                    ORDER BY al.created_at DESC LIMIT 8`),
+      ]);
+      return respond(200, {
+        tenants_total: tenants.rows[0].n,
+        users_total: users.rows[0].n,
+        customers_total: customers.rows[0].n,
+        active_24h: activeRecent.rows[0]?.n_24h || 0,
+        active_7d: activeRecent.rows[0]?.n_7d || 0,
+        tickets_open: ticketsOpen.rows[0].n,
+        tickets_emergency_24h: ticketsEmerg.rows[0].n,
+        recent_activity: recentActivity.rows,
+      });
+    }
+
+    // GET /admin/tenants — list every company with rolled-up stats.
+    if (method === 'GET' && path === '/admin/tenants') {
+      const result = await pool.query(`
+        SELECT
+          c.id, c.name::text, c.created_at,
+          COALESCE(uc.user_count, 0)::int     AS user_count,
+          COALESCE(cc.customer_count, 0)::int AS customer_count,
+          COALESCE(tc.open_tickets, 0)::int   AS open_tickets,
+          ow.email::text                      AS owner_email,
+          la.last_activity
+        FROM companies c
+        LEFT JOIN LATERAL (
+          SELECT email FROM company_users WHERE company_id = c.id AND role = 'owner' AND COALESCE(status,'active') = 'active' LIMIT 1
+        ) ow ON true
+        LEFT JOIN (SELECT company_id, COUNT(*) AS user_count FROM company_users WHERE COALESCE(status,'active')='active' GROUP BY company_id) uc ON uc.company_id = c.id
+        LEFT JOIN (SELECT company_id, COUNT(*) AS customer_count FROM customers WHERE COALESCE(account_status,'active')='active' AND archived = FALSE GROUP BY company_id) cc ON cc.company_id = c.id
+        LEFT JOIN (SELECT company_id, COUNT(*) AS open_tickets FROM service_tickets WHERE status IN ('open','in_progress') GROUP BY company_id) tc ON tc.company_id = c.id
+        LEFT JOIN (SELECT company_id, MAX(created_at) AS last_activity FROM activity_log GROUP BY company_id) la ON la.company_id = c.id
+        ORDER BY c.created_at DESC
+      `);
+      return respond(200, { tenants: result.rows });
+    }
+
+    // GET /admin/activity — paginated activity_log across all tenants.
+    // Query params: ?company_id=N&action=X&limit=50&before=<created_at iso>
+    if (method === 'GET' && path === '/admin/activity') {
+      const q = event.queryStringParameters || {};
+      const limit = Math.min(parseInt(q.limit, 10) || 50, 200);
+      const params = [];
+      const where = [];
+      if (q.company_id) { params.push(parseInt(q.company_id, 10)); where.push(`al.company_id = $${params.length}`); }
+      if (q.action)     { params.push(q.action);                   where.push(`al.action = $${params.length}`); }
+      if (q.before)     { params.push(q.before);                   where.push(`al.created_at < $${params.length}::timestamp`); }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      params.push(limit);
+      const events = await pool.query(`
+        SELECT al.id, al.company_id, al.user_email::text AS user_email, al.action::text AS action,
+               al.resource_type::text AS resource_type, al.resource_id, al.metadata, al.created_at,
+               c.name::text AS company_name
+        FROM activity_log al
+        LEFT JOIN companies c ON c.id = al.company_id
+        ${whereSql}
+        ORDER BY al.created_at DESC
+        LIMIT $${params.length}
+      `, params);
+      // next_cursor is the last row's created_at — caller passes it back as ?before=
+      const next = events.rows.length === limit ? events.rows[events.rows.length - 1].created_at : null;
+      return respond(200, { events: events.rows, next_cursor: next });
+    }
+
+    // ==================== END ADMIN CONSOLE ====================
 
     // GET /me/elevator/:id/timeline — O1 (Service History Timeline).
     // Returns a unified, chronologically-sorted event list for one elevator:

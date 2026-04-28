@@ -11,8 +11,14 @@ const PrivateRoute = ({ children, requiredRole }) => {
     const internalRoles = ['owner', 'technician', 'sales', 'staff', 'company'];
     const isInternal = internalRoles.includes(user?.role);
     const isCustomer = user?.role === 'customer';
-    if (requiredRole === 'company' && !isInternal) return <Navigate to="/customer/dashboard" replace />;
-    if (requiredRole === 'customer' && !isCustomer) return <Navigate to="/internal/dashboard" replace />;
+    const isSuperAdmin = user?.role === 'super_admin';
+    // Super admin is allowed to view any role-gated section (useful for QA),
+    // so we only enforce the requiredRole check on non-super_admin users.
+    if (!isSuperAdmin) {
+      if (requiredRole === 'super_admin') return <Navigate to={isInternal ? '/internal/dashboard' : '/customer/dashboard'} replace />;
+      if (requiredRole === 'company'  && !isInternal) return <Navigate to="/customer/dashboard" replace />;
+      if (requiredRole === 'customer' && !isCustomer) return <Navigate to="/internal/dashboard" replace />;
+    }
   }
   return children;
 };
