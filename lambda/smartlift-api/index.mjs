@@ -3323,7 +3323,15 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
       const priority = allowedPriorities.has(body.priority) ? body.priority : 'medium';
 
       const userEmail = decodeJWT(event)?.email || null;
-      const pageUrl = (body.page_url || '').slice(0, 500);
+      // AH-1: page_url is rendered as <a href={...}> in src/pages/admin/AdminFeedback.jsx.
+      // Without a scheme check, any authenticated caller (including a Customer at any
+      // tenant) can inject a `javascript:` or `data:text/html` URI that executes in the
+      // SuperAdmin's browser when they click the link in /admin/feedback. Result:
+      // SuperAdmin idToken exfiltration → platform takeover. We allow only http/https.
+      // Anything else is silently dropped to '' so the row still saves but the
+      // malicious URI never lands in storage.
+      const rawPageUrl = (body.page_url || '').slice(0, 500);
+      const pageUrl = /^https?:\/\/[^\s<>"]+$/i.test(rawPageUrl) ? rawPageUrl : '';
       const userAgent = (event.headers?.['User-Agent'] || event.headers?.['user-agent'] || '').slice(0, 500);
 
       const inserted = await pool.query(

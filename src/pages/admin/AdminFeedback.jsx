@@ -240,12 +240,22 @@ const AdminFeedback = () => {
                     <span className="flex items-center gap-1">
                       <Building2 className="w-3 h-3" />{selected.company_name || (selected.company_id ? `tenant #${selected.company_id}` : 'platform-level')}
                     </span>
-                    {selected.page_url && (
+                    {/* AH-1 defense-in-depth: even if a stored value bypasses the
+                        server-side scheme check (legacy rows, future migration imports,
+                        or a future regression), only render http/https URIs as a
+                        clickable link. Anything else (javascript:, data:, etc.) is
+                        shown as plain text so the SuperAdmin can see what was attempted
+                        without executing it. */}
+                    {selected.page_url && /^https?:\/\/[^\s<>"]+$/i.test(selected.page_url) ? (
                       <a href={selected.page_url} target="_blank" rel="noopener noreferrer"
                          className="text-purple-400 hover:text-purple-300 truncate max-w-[200px]" title={selected.page_url}>
                         {selected.page_url.replace(/^https?:\/\//, '')}
                       </a>
-                    )}
+                    ) : selected.page_url ? (
+                      <span className="text-amber-400 truncate max-w-[200px]" title={`Unsafe URL blocked: ${selected.page_url}`}>
+                        ⚠ unsafe URL blocked
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>

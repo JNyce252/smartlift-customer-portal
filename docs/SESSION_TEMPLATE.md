@@ -13,6 +13,7 @@ You've already done deep work on this project in prior sessions. Don't rediscove
 1. `~/Documents/smartlift-customer-portal/docs/ARCHITECTURE.md` — full architecture map (frontend, 6 Lambdas, API Gateway, Aurora, Cognito, schema). Verified facts.
 2. `~/Documents/smartlift-customer-portal/docs/SECURITY.md` — severity-ranked findings (5 CRITICAL, 8 HIGH, 10 MEDIUM, 10 LOW) with file:line citations. State of each is tracked at the top. After H-5+H-6+M-8a closure: 5/5 + 8/8 + 6/10 + 4/10.
 3. `~/Documents/smartlift-customer-portal/docs/CUSTOMER_PORTAL_REVIEW.md` — customer-portal-specific audit (3 HIGH, 9 MEDIUM, 10 LOW). All findings file:line-grounded.
+3a. `~/Documents/smartlift-customer-portal/docs/ADMIN_REVIEW.md` — admin/demo/feedback surface audit (1 HIGH, 5 MEDIUM, 7 LOW), generated 2026-04-29. Covers the SuperAdmin console, public /demo intake, tenant provisioning via /admin/demo-requests/:id/approve, and the /me/feedback → platform_feedback path.
 4. `~/Documents/smartlift-customer-portal/db/schema.md` — live introspection of the `hotelleads` Aurora DB (37 tables after H-5 cleanup, columns, row counts, multi-tenancy audit).
 5. `~/Documents/smartlift-customer-portal/infra/` — saved AWS configs as JSON (Cognito, Aurora SG, IAM role, Lambda env vars).
 6. `~/Documents/smartlift-customer-portal/lambda/` — local mirror of all 6 deployed Lambdas (`smartlift-api` is the 2,200-LOC monolith).
@@ -33,159 +34,169 @@ You've already done deep work on this project in prior sessions. Don't rediscove
 **Where I left off** (update this each time):
 
 ```
-Last session date: 2026-04-27 (evening, second pass — continuation)
-Last actions:      MARATHON session — closed every remaining CRITICAL + HIGH AND
-                   shipped the entire customer-portal feature top-5:
+Last session date: 2026-04-29
 
-                   (1) Step 5C-redo: VPC migration + close Aurora SG. Last CRITICAL done.
-                   (2) H-5: dropped dead tables `activities`, `contacts`, `service_requests`
-                       via Aurora RDS Data API. Cross-tenant leak vectors removed at schema level.
-                   (3) H-6: hardened Cognito pool us-east-1_n7bsroYdL in place — sandbox tag
-                       removed, DeletionProtection ACTIVE, MFA OPTIONAL (TOTP), group precedence
-                       corrected. Script: scripts/h6-harden-cognito-pool.sh.
-                   (4) M-8a: customer-role within-tenant scoping in smartlift-api. /elevators,
-                       /tickets, /maintenance, /invoices, /documents now filter customer_id
-                       when role='customer'. POST /tickets force-binds customer_id and verifies
-                       elevator ownership. PATCH /profile 403s for customers. Verified via
-                       customer browser dashboard load.
-                   (5) Customer portal review: docs/CUSTOMER_PORTAL_REVIEW.md generated
-                       (3 HIGH, 9 MEDIUM, 10 LOW findings).
-                   (6) CH-1: server-side priority whitelist + customer-emergency rate-limit
-                       (3 per 24h, 4th+ silently downgrades to 'high' with activity_log audit).
-                   (7) CH-2: de-hardcoded derald@swcabs.com / phone in 3 customer pages
-                       (BillingPayments, Support, ServiceRequest). Now sourced from
-                       company_profile via GET /profile. Tenant-2 ready.
-                   (8) CH-3: customer-role queries enumerate columns instead of SELECT *.
-                       Drops risk_score, resolution_notes, internal cost, internal user emails,
-                       etc. CUSTOMER_COLUMNS constant near auth helpers in smartlift-api.
-                   (9) Repo organization: docs moved to docs/, scaffolding to archive/,
-                       expanded .gitignore + README.md.
+Last actions (everything since the 2026-04-27 customer-portal-v1 ship — 8 commits on main):
 
-                   Customer-portal feature roadmap top-5 — all backend-deployed:
-                   (10) B1+B2: Compliance Health Score (gauge + per-elevator breakdown) +
-                        Certification Cliff Chart (Recharts ComposedChart, your inspections
-                        vs TX % monthly distribution). Endpoint: GET /me/compliance.
-                        Component: src/components/customer/ComplianceCard.jsx.
-                   (11) A1: Hidden Defect Cohort Predictions. SQL cohort against TDLR
-                        building_registry (148k rows) + Bedrock Claude Sonnet 4.5 with
-                        cohort-grounded prompt. 30-day cache in elevator_insights table.
-                        Endpoint: GET /me/elevator/:id/insights. Component:
-                        src/components/customer/ElevatorInsightsPanel.jsx.
-                   (12) O2: Renewal Calendar .ics export (snapshot download). Endpoint:
-                        GET /me/calendar.ics returning text/calendar. Frontend trigger:
-                        api.downloadCalendar() blob handler + button on dashboard header.
-                        Subscribable URL deferred to v2 (needs auth-NONE on API Gateway).
-                   (13) A2: AI Q&A Chat ("Ask Smarterlift"). Customer-data-grounded system
-                        prompt + Claude with 20-msg / 2000-char-each guardrails.
-                        Endpoint: POST /me/chat. Page: src/pages/customer/AskSmarterlift.jsx
-                        at /customer/ask. Hero card on the dashboard.
-                   (14) O1: Service History Timeline. Unified per-elevator event timeline
-                        (install + modernization + inspections + maintenance_logs +
-                        tickets created/completed + scheduled maintenance). PDF export via
-                        jsPDF. Endpoint: GET /me/elevator/:id/timeline. Page:
-                        src/pages/customer/ElevatorHistory.jsx at /customer/elevator/:id/history.
-                        MyElevators "View Service History" button now points here.
+  362765f Ship customer portal v1 — pushed; the "MARATHON" pile (C-1 VPC migration,
+          H-5 dead-table drops, H-6 Cognito hardening, M-8a customer scoping, CH-1
+          priority cap, CH-2 contact-info de-hardcode, CH-3 column enumeration, plus
+          features B1+B2 ComplianceCard, A1 ElevatorInsights, O2 calendar .ics, A2
+          AskSmarterlift, O1 ElevatorHistory). Repo reorg into docs/+archive/.
 
-                   Schema migrations this session (via Aurora RDS Data API):
-                   - DROP TABLE activities, contacts, service_requests (H-5).
-                   - CREATE TABLE elevator_insights (A1 cache, 30-day TTL).
+  0cc56d2 Fix Wrench import in Dashboard.
 
-                   Step 5C-redo details:
-                   - Created private subnets smartlift-private-1a (172.31.96.0/20,
-                     subnet-0a4eb0fd5b55ef324) and smartlift-private-1b (172.31.112.0/20,
-                     subnet-0556c8d00aa1f99ff) in vpc-06cec9c7bd56c515d.
-                   - NAT Gateway nat-07c5a41250bccf625 with EIP eipalloc-045f2e977c1e13573
-                     in public subnet subnet-0fc3605ad04dca501 (1a). ~$32/mo flat.
-                   - Route table rtb-0b767a35d2459cdd3: 0.0.0.0/0 -> NAT, attached to both
-                     private subnets.
-                   - Lambda SG sg-05ad862bc8fe7fc3c (smartlift-lambda-sg, no inbound, default
-                     egress).
-                   - Aurora SG sg-0a10102c1e09c540e new ingresses: tcp/5432 from Lambda SG +
-                     tcp/443 from Lambda SG (the latter for VPC endpoint reach — Bedrock and
-                     Lambda VPC interface endpoints are attached to the Aurora SG).
-                   - Attached AWSLambdaVPCAccessExecutionRole to the 4 Lambda roles missing it
-                     (ai-scorer's role already had it).
-                   - Migrated all 5 DB-using Lambdas to {private subnets, Lambda SG} in this
-                     order: tdlr-refresh, maintenance-reminder, review-analyzer, ai-scorer,
-                     smartlift-api (last). Each verified before the next.
-                   - Revoked 0.0.0.0/0:5432 from Aurora SG at 2026-04-27T21:16Z. Pre- and
-                     post-revoke /health both green; logged-in dashboard load all 2xx.
-                   - BONUS app fix: smartlift-tdlr-refresh referenced table `tdlr_elevators` in
-                     5 places; live table is `building_registry`. Renamed and re-deployed; full
-                     ingest now succeeds (74,052 rows + 365 contractors + 208 inspectors). The
-                     daily cron had been silently failing; it now works.
-                   - Scripts (idempotent): scripts/vpc-phase-{a-infra,b0-iam-vpc,b-lambdas,
-                     d-close-aurora-sg}.sh. State in scripts/.vpc-phase-a-state.json.
+  62c836e feat: real Proposals list page. Closed the dead /internal/proposals nav
+          link. New page src/pages/internal/Proposals.jsx (table + status filter +
+          search, click-through to ProspectDetails). New endpoint GET /proposals
+          (latest proposal per prospect, joined with prospects + ei.estimated_elevators,
+          scoped by company_id). API Gateway: new /proposals resource + Cognito
+          authorizer + OPTIONS CORS. Login.jsx: also fixed the on-mount redirect
+          (line 23 — same role==='company' bug as the post-login redirect).
 
-Next action:       PUSH THE WHOLE BAG. There's a substantial undeployed frontend pile
-                   waiting on `git push`. Everything backend-side is already live.
+  694615a Admin Console v1: SuperAdmin auth, /admin/* endpoints + 3 pages.
+          - getAuthContext now checks groups.includes('SuperAdmin') first and returns
+            { companyId: null, customerId: null, role: 'super_admin' } — no tenant row
+            required. /admin/* routes gated explicitly with authRole !== 'super_admin' →
+            403 (lambda/smartlift-api/index.mjs:3307).
+          - New endpoints: GET /admin/dashboard, GET /admin/tenants, GET /admin/activity.
+          - Pages: AdminDashboard, AdminTenants, AdminActivity. AdminLayout shell.
+          - Bootstrap script: scripts/admin-bootstrap-superadmin.sh.
+          - API Gateway: scripts/apigw-add-admin-routes.sh.
 
-                   What's pending push (ships in one Amplify rebuild):
-                     - Frontend code: CH-2 customer pages (BillingPayments, Support,
-                       ServiceRequest); ComplianceCard widget + dashboard mount;
-                       ElevatorInsightsPanel on MyElevators; Calendar download button on
-                       dashboard; AskSmarterlift page + dashboard hero card; ElevatorHistory
-                       page + redirected "View Service History" button.
-                     - Repo reorganization: docs/, archive/, expanded .gitignore, real README.
-                     - Doc updates: SECURITY.md, CUSTOMER_PORTAL_REVIEW.md (new),
-                       CUSTOMER_PORTAL_FEATURES.md (new), SESSION_TEMPLATE.md.
-                   Single commit, single push.
+  9c75650 Fix AuthContext role decoder: SuperAdmin was being overwritten back to 'staff'
+          on every page load (decoder ran on idToken refresh and missed the SuperAdmin
+          group). Lambda also affected.
 
-                   After the push lands and Amplify rebuilds (~3 min), test loop is:
-                     1. Sign in as testcustomer@smarterlift.app at smarterlift.app
-                     2. Dashboard renders with: Compliance gauge widget, Ask Smarterlift
-                        hero card, "Calendar" button in header.
-                     3. Click "Ask Smarterlift" → chat page with 6 suggested questions
-                        → ask one → Claude answers (~5-8s).
-                     4. Back to /customer/elevators → expand an elevator → AI Insights
-                        Panel auto-loads (~10s first time, instant after thanks to cache)
-                     5. Click "View Service History" → unified timeline + PDF export.
+  dcef427 Admin dashboard redesign: 14-day sparklines, per-tenant health cards, system
+          pulse strip. /admin/dashboard endpoint expanded to return the trend arrays.
 
-                   Open work AFTER the push, all MEDIUM or below:
-                     - CM-1 Stripe wiring (or remove "Pay Now" stub in BillingPayments).
-                     - CM-5 Customer profile editor (no /me/customer GET+PATCH today).
-                     - M-3 Aurora DeletionProtection=true + Multi-AZ.
-                     - O2 v2 Subscribable calendar URL (token-auth public endpoint).
-                     - Other features in docs/CUSTOMER_PORTAL_FEATURES.md (B3, B4, A3, O3,
-                       O4, E1-E3) — pick by ROI when you're ready.
+  01ac1dd feat(admin): cross-tenant tickets + feedback queue + platform_feedback table.
+          - New endpoints: POST /me/feedback (any auth user → SES email + DB row),
+            GET /admin/feedback, PATCH /admin/feedback/{id}, GET /admin/service-requests
+            (cross-tenant ticket view, emergency-first sort).
+          - DB: platform_feedback table (status: new/triaged/in_progress/resolved/wont_fix,
+            priority, admin_notes).
+          - Frontend: AdminFeedback.jsx (status tabs + inline editor),
+            AdminServiceRequests.jsx (cross-tenant list), reusable FeedbackModal mounted
+            in UserMenu (mgmt) + Support.jsx (customer).
+          - AdminDashboard: triage cards (tickets + feedback) above KPI grid.
+          - AdminLayout: nav adds Tickets + Feedback tabs.
+          - AI cost cache shipped same commit: prospects.ai_input_hash and
+            reviews_input_hash columns; opus-4-7 + sonnet-4-6 selected via env vars.
 
-State of original SECURITY.md findings (management portal):
+  e032395 feat(demo): public /demo page + admin queue + one-click tenant provisioning.
+          - Public POST /demo-requests (no auth, honeypot field website_url|fax|url,
+            per-IP rate-limit 5/24h, 320-char email cap, 4000-char message cap, SES
+            email to nyceguy@thegoldensignature.com).
+          - GET /admin/demo-requests, PATCH /admin/demo-requests/:id,
+            POST /admin/demo-requests/:id/approve (creates companies row status='trialing'
+            with 14-day trial; AdminCreateUser in Cognito Owners group; sends welcome
+            email + Cognito invite-with-temp-pw; rolls back the company row if Cognito
+            fails).
+          - DB: demo_requests table self-bootstraps (CREATE IF NOT EXISTS in
+            ensureDemoRequestsSchema, fires once per cold start).
+          - Frontend: marketing/RequestDemo.jsx (public /demo) with off-screen honeypot.
+            AdminDemoRequests.jsx two-pane queue with status tabs + inline notes +
+            ApproveModal.
+          - AdminLayout: Demos tab between Dashboard and Tickets.
+          - Login: 'Request a demo' link now points to /demo (was thegoldensignature.com).
+
+  22691df feat(prompts): audit + rewrite of 6 highest-leverage Claude prompts.
+          (1) Lead scoring: rubric-driven, allow nulls for unknowns, expanded inputs,
+              prompt-injection guard, fingerprint hash bumped to v2 → re-scores all
+              prospects. (2) Proposal improver: explicit preserve-fact rules, ±20%
+              length cap, 4 focus modes, wrapped in <proposal> tags. (3) Stale-model
+              cleanup: 4 dead Sonnet 4.5 fallbacks bumped to 4.6; gs-contact moved to
+              env-driven model. New IAM policy permits Sonnet 4.6 + Haiku 4.5 — chat
+              had been silently failing on Sonnet 4.6 AccessDenied. (4) Cohort
+              predictions: user-controlled inputs in tags + injection guard, threaded
+              service company name through. (5) Review intelligence: explicit rubric,
+              'unknown' enum value, empty-array-is-valid guidance, fingerprint v2 →
+              re-analyzes all prospects. (6) Cold outreach email: signal-aware opener,
+              voice constraints, CAN-SPAM unsubscribe footer, 120-word cap.
+              Also: deploy-lambda.sh empty-array bug fix under set -u.
+
+Schema state since last template update (Aurora hotelleads, 39 tables now vs. 37):
+  + platform_feedback   (cross-tenant feedback inbox; row count not pulled this session)
+  + demo_requests       (CREATE IF NOT EXISTS, self-bootstraps; row count not pulled)
+  + columns: prospects.ai_input_hash, prospects.reviews_input_hash (cost cache)
+  Companies.status now actively used; allowed values: active, trialing, past_due
+  (cancelled/paused/suspended throw AuthError → 401 at request boundary).
+
+Models in production (hard-coded fallbacks updated, env-driven preferred):
+  - Lead scoring + per-prospect re-score: us.anthropic.claude-sonnet-4-6 (env CLAUDE_MODEL)
+  - Proposal generation, intro email, chat, contact form: same family, env-driven
+  - Customer "Ask Smarterlift" chat: us.anthropic.claude-haiku-4-5 (chat tier)
+  - Review analyzer + ai-scorer: us.anthropic.claude-sonnet-4-6
+  - IAM bedrock-invoke-model-v2 policy permits Sonnet 4.6 + Haiku 4.5
+
+Next action:       Audit the new admin/demo/feedback surface for security and write
+                   findings into docs (severity-ranked, file:line-cited). Specifically:
+                     - /admin/* role gating + IDOR (tenants, feedback, service-requests,
+                       demo-requests).
+                     - POST /demo-requests public endpoint (honeypot, rate-limit, email
+                       enumeration risk, stored-payload XSS in admin display path).
+                     - POST /admin/demo-requests/:id/approve tenant provisioning
+                       (Cognito AdminCreateUser, role assignment, password handling,
+                       race conditions, idempotency, rollback path).
+                     - POST /me/feedback (auth'd, all roles): input caps, escape in SES
+                       email body, escape in admin display, cross-tenant info disclosure
+                       in /admin/feedback queue.
+                   Then knock down the remaining open MEDIUMs from SECURITY.md:
+                   M-1 errors leak, M-2 deletion protection, M-7 per-tenant SES,
+                   M-9 cross-tenant scorer, M-10 cosmetic, plus M-3/M-4/M-8 cost-or-GCP-
+                   bound items. Then start CUSTOMER_PORTAL_REVIEW MEDIUMs (CM-1..CM-9).
+
+State of SECURITY.md findings (management portal):
    CRITICAL:  5/5 closed
    HIGH:     8/8 closed
-   MEDIUM:   6/10 closed  (M-1 errors, M-2 deletion protect, M-3 multi-AZ open,
-                          M-4 PI, M-7 per-tenant SES, M-8 bundle keys,
-                          M-8a customer scoping CLOSED, M-9 cross-tenant scorer, M-10 cosmetic)
+   MEDIUM:   ?/10 closed — needs verification this session as part of the audit pass.
+                          Confirmed closed: M-5 (token-key, via C-4/C-5), M-6 (path
+                          stripper now /^\/(prod|staging)(?=\/|$)/), M-8a customer
+                          scoping. Likely open: M-1, M-2, M-3, M-4, M-7, M-8, M-9, M-10.
    LOW:      4/10 closed  (assorted cleanups)
 
 State of CUSTOMER_PORTAL_REVIEW.md findings (customer portal):
    CRITICAL:  0/0
    HIGH:     3/3 closed   (CH-1 priority cap, CH-2 contact info, CH-3 column enumeration)
-   MEDIUM:   0/9 closed   (CM-1 Stripe stub, CM-2 fetch-to-api.js, CM-3 file_url validation,
-                          CM-4 JSON.parse hardening, CM-5 customer profile editor,
-                          CM-6 Support category whitelist, CM-7 /tickets ?limit=,
-                          CM-8 PrivateRoute redirect, CM-9 / catch-all)
-   LOW:      0/10 closed  (assorted polish)
+   MEDIUM:   0/9 closed   (CM-1..CM-9 all open)
+   LOW:      0/10 closed  (CL-1..CL-10 all open)
 
-Open items by priority:
-  - CM-1 (MEDIUM)                       — Stripe wiring OR remove "Pay Now" stub from
-                                          BillingPayments. ~5 min remove vs ~1 day wire.
-  - CM-5 (MEDIUM)                       — customer profile editor (no /me/customer GET+PATCH
-                                          today; customer can't update own contact info).
-  - M-3 (MEDIUM)                        — Aurora DeletionProtection=true + Multi-AZ; if you
-                                          go Multi-AZ, also add a second NAT in 1b for HA.
-  - CM-2 (MEDIUM)                       — normalize 4 direct fetch() calls in customer pages
-                                          to api.js wrapper. Mechanical.
-  - CM-3, CM-4, CM-6..CM-9              — see docs/CUSTOMER_PORTAL_REVIEW.md
-  - Optional H-6 follow-up (LOW)        — step up MFA from OPTIONAL to REQUIRED for Owners-
-                                          only via admin-set-user-mfa-preference. Strongly
-                                          recommended before tenant 2 onboards.
-  - Step 1.2 (LOW)                      — tighten OPTIONS preflight CORS on the 80 routes
-                                          (cosmetic; real responses are origin-locked)
-  - Customer-portal LOWs (CL-1..CL-10)  — see docs/CUSTOMER_PORTAL_REVIEW.md
-  - Cleanup (LOW)                       — `tcp/22 from 52.95.4.19/32` ingress on Aurora SG
-                                          is leftover, not in use; remove. Also: split VPC
-                                          interface endpoints onto a dedicated endpoint SG
-                                          rather than reusing the Aurora SG.
+State of admin/demo/feedback surface (added since last template update):
+   AUDIT:    not yet performed — this session's primary security objective.
+
+Open items by priority (post-audit):
+  - Admin/demo/feedback findings (TBD this session) — file:line-cited results to
+                                          land in SECURITY.md or new ADMIN_REVIEW.md.
+  - M-1 (MEDIUM)                        — generic 500 errors with request_id; stop
+                                          leaking pg.message via internalError().
+  - M-2 (MEDIUM)                        — Aurora DeletionProtection=true. ~5 min via
+                                          aws rds modify-db-cluster.
+  - M-9 (MEDIUM)                        — ai-scorer "all prospects" path missing
+                                          company_id filter (lambda/smartlift-ai-scorer).
+                                          Verify upstream caller passes company_id, or
+                                          enforce here.
+  - M-7 (MEDIUM)                        — SES From hardcoded to derald@swcabs.com in
+                                          maintenance-reminder. Tenant-2 blocker.
+  - M-10 (MEDIUM, cosmetic)             — gs-contact SES Source uses nyceguy252@gmail.
+  - M-3 (MEDIUM)                        — Aurora Multi-AZ + dual-AZ NAT (cost decision).
+  - M-4 (MEDIUM)                        — Performance Insights enable.
+  - M-8 (MEDIUM)                        — GCP key restrictions (HTTP-referrer);
+                                          you in GCP console, not me.
+  - CM-1..CM-9 (customer-portal MEDIUM) — see docs/CUSTOMER_PORTAL_REVIEW.md.
+  - CL-1..CL-10 (customer-portal LOW)   — polish, after MEDIUMs clear.
+  - Optional H-6 follow-up (LOW)        — MFA REQUIRED for Owners-only before tenant 2
+                                          via admin-set-user-mfa-preference.
+  - Cleanup (LOW)                       — Aurora SG `tcp/22 from 52.95.4.19/32` (unused);
+                                          split VPC interface endpoints onto dedicated SG.
+  - Step 1.2 (LOW)                      — tighten OPTIONS preflight CORS on all routes.
+
+Repo state (verified 2026-04-29):
+  - Branch: main, 0 ahead / 0 behind origin/main.
+  - HEAD: 22691df (feat(prompts): audit + rewrite of 6 highest-leverage Claude prompts).
+  - Working tree: clean.
+  - Stashes: none.
 ```
 
 After you've read the docs above and confirmed the state, ask: "What do you want to tackle next?" — don't speculatively start work. If I respond with a Step number or feature, look it up in `SECURITY.md` for context and proceed.
