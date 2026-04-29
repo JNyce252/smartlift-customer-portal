@@ -250,6 +250,43 @@ const CUSTOMER_COLUMNS = {
 // Convenience: a "/health" caller doesn't need a company. Keep this whitelist tight.
 const PUBLIC_PATHS = new Set(['/health', '/']);
 
+// Self-bootstrapping schema for demo_requests. Runs once per cold start; the
+// IF NOT EXISTS guards make it idempotent. Cheaper than maintaining a separate
+// migration step. The Data API path was blocked by tooling at provisioning
+// time so we ship the DDL inline here. Fire-and-forget — if the DB is briefly
+// unreachable on a cold start, the next request will retry.
+let _demoRequestsSchemaReady = false;
+const ensureDemoRequestsSchema = async () => {
+  if (_demoRequestsSchemaReady) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS demo_requests (
+        id              SERIAL PRIMARY KEY,
+        name            VARCHAR(200) NOT NULL,
+        email           VARCHAR(320) NOT NULL,
+        company         VARCHAR(200),
+        phone           VARCHAR(50),
+        message         TEXT,
+        source          VARCHAR(64) DEFAULT 'smarterlift.app',
+        status          VARCHAR(32) NOT NULL DEFAULT 'new'
+                          CHECK (status IN ('new','contacted','qualified','approved','declined','converted')),
+        admin_notes     TEXT,
+        approved_at     TIMESTAMP,
+        approved_company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+        ip_address      INET,
+        user_agent      VARCHAR(500),
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_demo_requests_status_created ON demo_requests(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_demo_requests_email          ON demo_requests(LOWER(email));
+    `);
+    _demoRequestsSchemaReady = true;
+  } catch (e) {
+    console.error('[ensureDemoRequestsSchema] failed (will retry on next request):', e.message);
+  }
+};
+
 // Log activity (non-fatal — failures here must never block a successful request)
 const logActivity = async (pool, companyId, userEmail, action, resourceType, resourceId, metadata) => {
   try {
@@ -274,6 +311,116 @@ export const handler = async (event) => {
     try {
       const r = await pool.query('SELECT NOW() as now');
       return respondTo(event, 200, { status: 'ok', time: r.rows[0].now });
+    } catch (e) { return internalError(event, e); }
+  }
+
+  // POST /demo-requests — PUBLIC. Anyone on smarterlift.app can submit a demo
+  // request without auth. Honeypot + per-IP rate limit + length caps keep this
+  // from becoming spam target. Persists to demo_requests + emails Jeremy.
+  // Goes BEFORE getAuthContext so unauthenticated callers don't get 401'd.
+  if (method === 'POST' && path === '/demo-requests') {
+    try {
+      await ensureDemoRequestsSchema();
+      const raw = JSON.parse(event.body || '{}');
+
+      // Honeypot — silently 200 to avoid telling the bot the trap is here.
+      if (raw.website_url || raw.fax || raw.url) {
+        console.log('Demo request honeypot triggered — silently dropping');
+        return respondTo(event, 200, { success: true });
+      }
+
+      // Length caps before doing anything with the data.
+      const name    = String(raw.name    ?? '').slice(0, 200).trim();
+      const email   = String(raw.email   ?? '').slice(0, 320).trim().toLowerCase();
+      const company = String(raw.company ?? '').slice(0, 200).trim();
+      const phone   = String(raw.phone   ?? '').slice(0, 50).trim();
+      const message = String(raw.message ?? '').slice(0, 4000).trim();
+      const source  = String(raw.source  ?? 'smarterlift.app').slice(0, 64).trim();
+
+      // Required fields.
+      if (!name || !email) return respondTo(event, 400, { error: 'name and email required' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return respondTo(event, 400, { error: 'invalid email' });
+      }
+
+      // Per-IP rate limit: max 5 submissions in last 24h. Stops a single bot
+      // from filling the queue. Falls open on DB error — never blocks legit
+      // signups because the rate-limit check failed.
+      const ip = event.requestContext?.identity?.sourceIp
+              || event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim()
+              || event.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+              || null;
+      if (ip) {
+        try {
+          const rl = await pool.query(
+            `SELECT COUNT(*)::int AS n FROM demo_requests
+              WHERE ip_address = $1 AND created_at > NOW() - INTERVAL '24 hours'`,
+            [ip]
+          );
+          if ((rl.rows[0]?.n || 0) >= 5) {
+            return respondTo(event, 429, { error: 'rate_limited', message: 'Too many requests from your network. Please email us directly at nyceguy@thegoldensignature.com.' });
+          }
+        } catch (e) { /* fall open */ }
+      }
+
+      const userAgent = String(event.headers?.['User-Agent'] || event.headers?.['user-agent'] || '').slice(0, 500);
+
+      const inserted = await pool.query(
+        `INSERT INTO demo_requests (name, email, company, phone, message, source, ip_address, user_agent)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id, created_at`,
+        [name, email, company || null, phone || null, message || null, source, ip, userAgent]
+      );
+      const drId = inserted.rows[0].id;
+      const createdAt = inserted.rows[0].created_at;
+
+      // Email Jeremy. Non-fatal — the DB row always saves.
+      try {
+        const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
+        const ses = new SESClient({ region: 'us-east-1' });
+        const esc = (s) => String(s ?? '')
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const html = `
+          <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:20px;background:#0a0a10;color:#f5f5f0">
+            <div style="border-bottom:2px solid #a78bfa;padding-bottom:14px;margin-bottom:20px">
+              <h2 style="color:#a78bfa;margin:0;font-size:20px">🚀 New Smarterlift Demo Request</h2>
+              <p style="color:#888;margin:4px 0 0;font-size:12px">${esc(source)} · ${new Date(createdAt).toISOString()}</p>
+            </div>
+            <div style="background:#111;border:1px solid #222;border-radius:8px;padding:16px;margin-bottom:16px">
+              <p style="margin:4px 0;color:#fff"><span style="color:#666;display:inline-block;width:80px">Name:</span>${esc(name)}</p>
+              <p style="margin:4px 0;color:#fff"><span style="color:#666;display:inline-block;width:80px">Company:</span>${esc(company || '—')}</p>
+              <p style="margin:4px 0;color:#fff"><span style="color:#666;display:inline-block;width:80px">Email:</span><a href="mailto:${esc(email)}" style="color:#a78bfa">${esc(email)}</a></p>
+              <p style="margin:4px 0;color:#fff"><span style="color:#666;display:inline-block;width:80px">Phone:</span>${esc(phone || '—')}</p>
+            </div>
+            ${message ? `
+            <div style="background:#111;border:1px solid #222;border-radius:8px;padding:16px;margin-bottom:16px">
+              <h3 style="color:#a78bfa;margin:0 0 8px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase">Message</h3>
+              <p style="white-space:pre-wrap;color:#ddd;font-size:14px;line-height:1.6;margin:0">${esc(message)}</p>
+            </div>
+            ` : ''}
+            <div style="background:#1a0d33;border:1px solid #a78bfa;border-radius:8px;padding:14px">
+              <p style="color:#c4b5fd;font-weight:bold;margin:0 0 6px;font-size:13px">Next Step</p>
+              <p style="color:#888;margin:0;font-size:13px;line-height:1.6">Open the queue at <a href="https://smarterlift.app/admin/demo-requests" style="color:#a78bfa">smarterlift.app/admin/demo-requests</a> to triage. Reply directly to this email to reach ${esc(name)}.</p>
+            </div>
+            <p style="color:#444;font-size:11px;margin:16px 0 0">Demo Request #${drId} · IP ${ip || 'unknown'}</p>
+          </div>
+        `;
+        const text = `New Smarterlift demo request\n\nName: ${name}\nCompany: ${company || '—'}\nEmail: ${email}\nPhone: ${phone || '—'}\n\nMessage:\n${message || '—'}\n\nQueue: https://smarterlift.app/admin/demo-requests\nDemo Request #${drId}`;
+        await ses.send(new SendEmailCommand({
+          Source: 'nyceguy252@gmail.com',
+          Destination: { ToAddresses: ['nyceguy@thegoldensignature.com'] },
+          ReplyToAddresses: [email],
+          Message: {
+            Subject: { Data: `[Smarterlift demo] ${company || name} — ${email}`.slice(0, 200) },
+            Body: { Html: { Data: html }, Text: { Data: text } },
+          },
+        }));
+      } catch (mailErr) {
+        console.error('[demo-requests] email failed (saved to DB regardless):', mailErr.message);
+      }
+
+      return respondTo(event, 201, { id: drId, status: 'new', created_at: createdAt });
     } catch (e) { return internalError(event, e); }
   }
 
@@ -3363,6 +3510,225 @@ Return 3-5 watch_areas, ordered priority high→low. Be SPECIFIC to elevator age
         GROUP BY status, priority
       `);
       return respond(200, { items: items.rows, counts: counts.rows });
+    }
+
+    // GET /admin/demo-requests — paginated queue with status filter + counts.
+    // Default returns active queue (new + contacted + qualified). Filter via
+    // ?status=approved or ?status=all. Bootstraps the table on first call so
+    // the queue page works even before anyone has submitted.
+    if (method === 'GET' && path === '/admin/demo-requests') {
+      await ensureDemoRequestsSchema();
+      const q = event.queryStringParameters || {};
+      const limit = Math.min(parseInt(q.limit, 10) || 200, 500);
+      const params = [];
+      const where = [];
+      if (q.status && q.status !== 'all') {
+        params.push(q.status); where.push(`dr.status = $${params.length}`);
+      } else if (!q.status) {
+        // Default = unworked + in-progress queue
+        where.push(`dr.status IN ('new','contacted','qualified')`);
+      }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      params.push(limit);
+      const items = await pool.query(`
+        SELECT dr.id, dr.name, dr.email, dr.company, dr.phone, dr.message,
+               dr.source, dr.status, dr.admin_notes, dr.approved_at,
+               dr.approved_company_id, dr.ip_address::text, dr.created_at, dr.updated_at,
+               c.name::text AS approved_company_name
+        FROM demo_requests dr
+        LEFT JOIN companies c ON c.id = dr.approved_company_id
+        ${whereSql}
+        ORDER BY
+          CASE dr.status WHEN 'new' THEN 0 WHEN 'contacted' THEN 1 WHEN 'qualified' THEN 2
+                         WHEN 'approved' THEN 3 WHEN 'converted' THEN 4 ELSE 5 END,
+          dr.created_at DESC
+        LIMIT $${params.length}
+      `, params);
+      const counts = await pool.query(`
+        SELECT status::text AS status, COUNT(*)::int AS n
+        FROM demo_requests GROUP BY status
+      `);
+      const countsByStatus = Object.fromEntries(counts.rows.map(r => [r.status, r.n]));
+      return respond(200, { items: items.rows, counts: countsByStatus });
+    }
+
+    // PATCH /admin/demo-requests/:id — update status / admin_notes (NOT
+    // approval; that has its own endpoint with provisioning side-effects).
+    if (method === 'PATCH' && path.match(/^\/admin\/demo-requests\/\d+$/)) {
+      const drId = parseInt(path.split('/')[3], 10);
+      const body = JSON.parse(event.body || '{}');
+      const allowed = new Set(['new','contacted','qualified','declined']);
+      const sets = []; const params = [];
+      if (body.status !== undefined) {
+        if (!allowed.has(body.status)) return respond(400, { error: 'invalid_status', hint: 'Use POST /:id/approve to approve.' });
+        params.push(body.status); sets.push(`status = $${params.length}`);
+      }
+      if (body.admin_notes !== undefined) {
+        params.push(String(body.admin_notes).slice(0, 4000)); sets.push(`admin_notes = $${params.length}`);
+      }
+      if (!sets.length) return respond(400, { error: 'no_fields_to_update' });
+      sets.push(`updated_at = NOW()`);
+      params.push(drId);
+      const updated = await pool.query(`
+        UPDATE demo_requests SET ${sets.join(', ')}
+        WHERE id = $${params.length}
+        RETURNING id, status, admin_notes, updated_at
+      `, params);
+      if (!updated.rows.length) return respond(404, { error: 'not_found' });
+      return respond(200, updated.rows[0]);
+    }
+
+    // POST /admin/demo-requests/:id/approve — the heavy one.
+    // Provisions a tenant: companies row (status='trialing', 14-day trial) +
+    // Cognito Owner user + invite email. Wrapped so a Cognito failure rolls back
+    // the DB insert (best-effort: we delete the company row if Cognito throws).
+    if (method === 'POST' && path.match(/^\/admin\/demo-requests\/\d+\/approve$/)) {
+      const drId = parseInt(path.split('/')[3], 10);
+      const body = JSON.parse(event.body || '{}');
+
+      // Pull the demo request first.
+      const drRes = await pool.query('SELECT * FROM demo_requests WHERE id = $1', [drId]);
+      if (!drRes.rows.length) return respond(404, { error: 'demo_request_not_found' });
+      const dr = drRes.rows[0];
+      if (dr.status === 'approved' || dr.status === 'converted') {
+        return respond(409, { error: 'already_approved', approved_company_id: dr.approved_company_id });
+      }
+
+      // Company name + slug. Caller can override via body.company_name; falls
+      // back to the demo request's company field then to the contact name.
+      const companyName = String(body.company_name || dr.company || dr.name).slice(0, 200).trim();
+      if (!companyName) return respond(400, { error: 'company_name_required' });
+      // kebab-case slug, ascii-only. Suffix with random 4-char id for uniqueness.
+      const slugBase = companyName.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'company';
+      const slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
+
+      // Owner email defaults to the demo request's email.
+      const ownerEmail = String(body.owner_email || dr.email).toLowerCase().trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+        return respond(400, { error: 'invalid_owner_email' });
+      }
+      const ownerName = String(body.owner_name || dr.name).slice(0, 200).trim();
+
+      // INSERT companies. status='trialing' triggers ALLOWED_COMPANY_STATUSES
+      // pass in getAuthContext so the owner can sign in immediately.
+      let newCompanyId;
+      try {
+        const cRes = await pool.query(
+          `INSERT INTO companies (name, slug, status, contact_email, contact_phone, trial_ends_at, plan_type, subscription_status)
+           VALUES ($1, $2, 'trialing', $3, $4, NOW() + INTERVAL '14 days', 'standard', 'trialing')
+           RETURNING id`,
+          [companyName, slug, ownerEmail, dr.phone || null]
+        );
+        newCompanyId = cRes.rows[0].id;
+      } catch (e) {
+        console.error('[approve] companies INSERT failed:', e.message);
+        return respond(500, { error: 'company_create_failed', detail: e.message });
+      }
+
+      // Provision Cognito user. If this fails, roll back the company row so
+      // we don't leave an orphan tenant.
+      try {
+        await cognitoClient.send(new AdminCreateUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: ownerEmail,
+          UserAttributes: [
+            { Name: 'email', Value: ownerEmail },
+            { Name: 'email_verified', Value: 'true' },
+            ...(ownerName ? [{ Name: 'name', Value: ownerName }] : []),
+          ],
+          DesiredDeliveryMediums: ['EMAIL'], // Cognito sends invite + temp password
+        }));
+        // Owners group implies the granular role; CompanyUsers is the umbrella
+        // that gates routes via /me/* — same pattern as /team/users/invite.
+        await cognitoClient.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'CompanyUsers'
+        }));
+        await cognitoClient.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'Owners'
+        }));
+      } catch (e) {
+        console.error('[approve] Cognito provisioning failed, rolling back company:', e.message);
+        try { await pool.query('DELETE FROM companies WHERE id = $1', [newCompanyId]); } catch {}
+        // UsernameExistsException is the common "already provisioned" case —
+        // surface it distinctly so the admin can decide to reuse vs. abort.
+        if (e.name === 'UsernameExistsException') {
+          return respond(409, { error: 'cognito_user_exists', email: ownerEmail });
+        }
+        return respond(500, { error: 'cognito_provisioning_failed', detail: e.message });
+      }
+
+      // Insert company_users row linking the Cognito user to the company.
+      // We don't have the cognito sub yet (AdminCreateUser doesn't return it
+      // in the same shape), so we look it up. Non-fatal — the role group
+      // alone gates auth.
+      try {
+        await pool.query(
+          `INSERT INTO company_users (company_id, email, role, status, created_at)
+           VALUES ($1, $2, 'owner', 'active', NOW())
+           ON CONFLICT DO NOTHING`,
+          [newCompanyId, ownerEmail]
+        );
+      } catch (e) { console.error('[approve] company_users insert non-fatal:', e.message); }
+
+      // Stamp the demo request as approved.
+      await pool.query(
+        `UPDATE demo_requests
+            SET status = 'approved', approved_at = NOW(),
+                approved_company_id = $1, updated_at = NOW()
+          WHERE id = $2`,
+        [newCompanyId, drId]
+      );
+
+      // Send a custom welcome email with the sign-in link. (Cognito already
+      // sent its own invite with the temp password; this one frames it.)
+      try {
+        const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
+        const ses = new SESClient({ region: 'us-east-1' });
+        const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        const html = `
+          <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f9fafb">
+            <h2 style="color:#7c3aed;margin:0 0 8px">Welcome to Smarterlift</h2>
+            <p style="color:#374151;line-height:1.6;margin:0 0 14px">Hi ${esc(ownerName || 'there')},</p>
+            <p style="color:#374151;line-height:1.6;margin:0 0 14px">
+              Your Smarterlift account for <strong>${esc(companyName)}</strong> is ready. You're on a 14-day trial — full access, no credit card required.
+            </p>
+            <p style="color:#374151;line-height:1.6;margin:0 0 18px">
+              You'll receive a separate email from <strong>Amazon Cognito</strong> with a temporary password. Use it to sign in at the link below; you'll be prompted to set a permanent password on your first sign-in.
+            </p>
+            <p style="text-align:center;margin:24px 0">
+              <a href="https://smarterlift.app/login"
+                 style="display:inline-block;padding:12px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Sign in to Smarterlift</a>
+            </p>
+            <p style="color:#6b7280;font-size:13px;line-height:1.6;margin:0">
+              Questions? Just reply to this email — it goes straight to Jeremy at The Golden Signature.
+            </p>
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
+            <p style="color:#9ca3af;font-size:11px;margin:0">Smarterlift · The Golden Signature LLC · Dallas, TX</p>
+          </div>
+        `;
+        const text = `Welcome to Smarterlift\n\nHi ${ownerName || 'there'},\n\nYour Smarterlift account for ${companyName} is ready. You're on a 14-day trial — full access, no credit card required.\n\nYou'll receive a separate email from Amazon Cognito with a temporary password. Use it to sign in at https://smarterlift.app/login — you'll be prompted to set a permanent password on first sign-in.\n\nQuestions? Reply to this email.\n\n— Jeremy at The Golden Signature`;
+        await ses.send(new SendEmailCommand({
+          Source: 'nyceguy252@gmail.com',
+          Destination: { ToAddresses: [ownerEmail] },
+          ReplyToAddresses: ['nyceguy@thegoldensignature.com'],
+          Message: {
+            Subject: { Data: `Welcome to Smarterlift — your trial is ready` },
+            Body: { Html: { Data: html }, Text: { Data: text } },
+          },
+        }));
+      } catch (mailErr) {
+        console.error('[approve] welcome email failed (provisioning succeeded regardless):', mailErr.message);
+      }
+
+      return respond(200, {
+        success: true,
+        company_id: newCompanyId,
+        company_name: companyName,
+        slug,
+        owner_email: ownerEmail,
+        trial_ends_at_days: 14,
+      });
     }
 
     // ==================== END ADMIN CONSOLE ====================

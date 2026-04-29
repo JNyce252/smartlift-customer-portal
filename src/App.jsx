@@ -35,6 +35,8 @@ import AdminTenants from './pages/admin/AdminTenants';
 import AdminActivity from './pages/admin/AdminActivity';
 import AdminServiceRequests from './pages/admin/AdminServiceRequests';
 import AdminFeedback from './pages/admin/AdminFeedback';
+import AdminDemoRequests from './pages/admin/AdminDemoRequests';
+import RequestDemo from './pages/marketing/RequestDemo';
 
 function App() {
   return (
@@ -43,6 +45,9 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          {/* Public marketing — no auth */}
+          <Route path="/demo" element={<RequestDemo />} />
+          <Route path="/request-demo" element={<Navigate to="/demo" replace />} />
           <Route path="/internal/dashboard" element={<PrivateRoute requiredRole="company"><InternalLayout><InternalDashboard /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/leads" element={<PrivateRoute requiredRole="company"><InternalLayout><LeadSearch /></InternalLayout></PrivateRoute>} />
           <Route path="/internal/prospect/:id" element={<PrivateRoute requiredRole="company"><InternalLayout><ProspectDetails /></InternalLayout></PrivateRoute>} />
@@ -71,6 +76,7 @@ function App() {
           {/* Platform admin console — gated to SuperAdmin role only */}
           <Route path="/admin/dashboard"        element={<PrivateRoute requiredRole="super_admin"><AdminDashboard /></PrivateRoute>} />
           <Route path="/admin/tenants"          element={<PrivateRoute requiredRole="super_admin"><AdminTenants /></PrivateRoute>} />
+          <Route path="/admin/demo-requests"    element={<PrivateRoute requiredRole="super_admin"><AdminDemoRequests /></PrivateRoute>} />
           <Route path="/admin/service-requests" element={<PrivateRoute requiredRole="super_admin"><AdminServiceRequests /></PrivateRoute>} />
           <Route path="/admin/feedback"         element={<PrivateRoute requiredRole="super_admin"><AdminFeedback /></PrivateRoute>} />
           <Route path="/admin/activity"         element={<PrivateRoute requiredRole="super_admin"><AdminActivity /></PrivateRoute>} />

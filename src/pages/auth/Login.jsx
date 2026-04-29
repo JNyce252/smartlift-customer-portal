@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle, ArrowRight, Building2, TrendingUp, Shield, Zap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -164,7 +164,7 @@ const Login = () => {
 
           <p style={{ textAlign: 'center', fontSize: '13px', color: 'rgba(255,255,255,0.3)' }}>
             Not a customer yet?{' '}
-            <a href="https://thegoldensignature.com" target="_blank" rel="noreferrer" style={{ color: '#a78bfa', fontWeight: '500', textDecoration: 'none' }}>Request a demo</a>
+            <Link to="/demo" style={{ color: '#a78bfa', fontWeight: '500', textDecoration: 'none' }}>Request a demo</Link>
           </p>
         </div>
       </div>

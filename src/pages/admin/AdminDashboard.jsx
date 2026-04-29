@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Users, UserCheck, Activity, AlertTriangle, Wrench, Sparkles,
   TrendingUp, TrendingDown, Minus, Database, Zap, ChevronRight, Clock,
-  MessageSquare,
+  MessageSquare, Rocket,
 } from 'lucide-react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { api } from '../../services/api';
@@ -218,9 +218,10 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [now, setNow] = useState(Date.now());
-  // Feedback queue counts come from a side-fetch since the main /admin/dashboard
-  // payload doesn't include them yet — keeps the dashboard endpoint stable.
+  // Feedback + demo-request queue counts come from side-fetches since the main
+  // /admin/dashboard payload doesn't include them yet — keeps that endpoint stable.
   const [feedbackCounts, setFeedbackCounts] = useState({});
+  const [demoCounts, setDemoCounts] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -229,9 +230,12 @@ const AdminDashboard = () => {
         .then(d => { if (!cancelled) setData(d); })
         .catch(e => { if (!cancelled) setError(e.message); })
         .finally(() => { if (!cancelled) setLoading(false); });
-      // Lightweight side-fetch: just need the counts. limit=1 to skip rows.
+      // Lightweight side-fetches: just need the counts. limit=1 to skip rows.
       api.getAdminFeedback({ limit: 1 })
         .then(d => { if (!cancelled) setFeedbackCounts(d.counts || {}); })
+        .catch(() => { /* non-fatal */ });
+      api.getAdminDemoRequests({ status: 'all', limit: 1 })
+        .then(d => { if (!cancelled) setDemoCounts(d.counts || {}); })
         .catch(() => { /* non-fatal */ });
     };
     load();
@@ -241,6 +245,8 @@ const AdminDashboard = () => {
   }, []);
 
   const openFeedback = (feedbackCounts.open || 0) + (feedbackCounts.in_review || 0);
+  const activeDemos  = (demoCounts.new || 0) + (demoCounts.contacted || 0) + (demoCounts.qualified || 0);
+  const newDemos     = demoCounts.new || 0;
 
   const totalActivity14d = useMemo(() => (data?.activity_14d || []).reduce((s, p) => s + p.count, 0), [data]);
 
@@ -274,9 +280,40 @@ const AdminDashboard = () => {
       )}
 
       {/* ---------- TRIAGE CARDS ---------- */}
-      {/* Two queues the founder will check most often: ops (tickets) + product (feedback).
-          These are CTAs, not just KPIs — clicking jumps straight into the queue. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+      {/* Three queues the founder checks most: funnel (demos), ops (tickets),
+          product (feedback). CTAs, not just KPIs — clicking jumps straight into
+          the queue. Demos goes first because new pipeline beats reacting to ops. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+        <Link
+          to="/admin/demo-requests"
+          className={`group bg-gradient-to-br from-gray-900 to-gray-900/40 border rounded-xl p-4 hover:border-purple-700/60 transition-colors ${
+            newDemos > 0 ? 'border-purple-700/60' : 'border-gray-800'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Rocket className={`w-4 h-4 ${newDemos > 0 ? 'text-purple-300' : 'text-purple-400'}`} />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Demo requests</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-white tabular-nums">{fmtNum(activeDemos)}</span>
+                <span className="text-sm text-gray-400">in funnel</span>
+              </div>
+              {newDemos > 0 ? (
+                <div className="mt-2 inline-flex items-center gap-1.5 bg-purple-900/40 border border-purple-700/60 rounded px-2 py-0.5 text-xs text-purple-200">
+                  <Sparkles className="w-3 h-3" />{newDemos} new — needs first touch
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-gray-500">
+                  {(demoCounts.contacted || 0)} contacted · {(demoCounts.qualified || 0)} qualified · {(demoCounts.approved || 0)} approved
+                </div>
+              )}
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
+          </div>
+        </Link>
+
         <Link
           to="/admin/service-requests"
           className={`group bg-gradient-to-br from-gray-900 to-gray-900/40 border rounded-xl p-4 hover:border-purple-700/60 transition-colors ${

@@ -110,6 +110,49 @@ export const api = {
     }),
   }),
 
+  // ===== Demo requests =====
+  // PUBLIC — no auth header. The /demo page calls this without a JWT, so we
+  // can't reuse `request()` which always attaches Authorization. Plain fetch
+  // with a JSON content-type header is enough.
+  submitDemoRequest: async (body) => {
+    const res = await fetch(`${BASE_URL}/demo-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'smarterlift.app', ...body }),
+    });
+    if (res.status === 429) {
+      const j = await res.json().catch(() => ({}));
+      const err = new Error(j.message || 'Too many requests. Please email us instead.');
+      err.code = 'rate_limited';
+      throw err;
+    }
+    if (!res.ok) throw new Error(`Demo request failed: ${res.status}`);
+    return res.json();
+  },
+  // Super-admin queue (default: new + contacted + qualified). Pass status='all'
+  // or any single status to override.
+  getAdminDemoRequests: (params = {}) => {
+    const qs = new URLSearchParams();
+    ['status','limit'].forEach(k => {
+      if (params[k] !== undefined && params[k] !== '' && params[k] !== null) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    return request(`/admin/demo-requests${q ? '?' + q : ''}`);
+  },
+  // Update status (new|contacted|qualified|declined) and/or admin_notes.
+  // Approval has its own endpoint because it has provisioning side-effects.
+  patchAdminDemoRequest: (id, body) => request(`/admin/demo-requests/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }),
+  // Approve + provision the tenant. Body can override company_name + owner_email
+  // + owner_name; otherwise defaults from the demo request fields. Returns
+  // {company_id, slug, owner_email}.
+  approveDemoRequest: (id, body = {}) => request(`/admin/demo-requests/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }),
+
   // O2: Renewal Calendar — fetches the customer's .ics and triggers a browser
   // download. Non-JSON response, so this bypasses the standard request() wrapper.
   // See docs/CUSTOMER_PORTAL_FEATURES.md feature O2. (v2: subscribable URL.)

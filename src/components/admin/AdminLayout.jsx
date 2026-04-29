@@ -4,13 +4,14 @@
 
 import React from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { ShieldCheck, BarChart3, Building2, Activity, LogOut, Sparkles, Wrench, MessageSquare } from 'lucide-react';
+import { ShieldCheck, BarChart3, Building2, Activity, LogOut, Sparkles, Wrench, MessageSquare, Rocket } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-// Order matters — keep Dashboard first (the founder lands here), then ops
-// queues (Service Requests, Feedback) before deeper drill-downs.
+// Order matters — keep Dashboard first (the founder lands here), then funnel
+// (Demos), then ops queues (Tickets, Feedback) before deeper drill-downs.
 const navTabs = [
   { to: '/admin/dashboard',         label: 'Dashboard',  icon: BarChart3 },
+  { to: '/admin/demo-requests',     label: 'Demos',      icon: Rocket },
   { to: '/admin/service-requests',  label: 'Tickets',    icon: Wrench },
   { to: '/admin/feedback',          label: 'Feedback',   icon: MessageSquare },
   { to: '/admin/tenants',           label: 'Tenants',    icon: Building2 },
