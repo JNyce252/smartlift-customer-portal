@@ -73,7 +73,15 @@ else
   for f in *.pem *.mjs; do
     [[ -f "$f" && "$f" != "$HANDLER_FILE" ]] && EXTRA_FILES+=("$f")
   done
-  zip -qj "$ZIP_PATH" "$HANDLER_FILE" "${EXTRA_FILES[@]}"
+  # Safe expansion under set -u: only pass EXTRA_FILES if non-empty.
+  # gs-contact has no .pem or .mjs siblings beyond the handler, so the
+  # array is legitimately empty and the naive ${EXTRA_FILES[@]} would
+  # trigger 'unbound variable' under strict mode.
+  if [[ ${#EXTRA_FILES[@]} -gt 0 ]]; then
+    zip -qj "$ZIP_PATH" "$HANDLER_FILE" "${EXTRA_FILES[@]}"
+  else
+    zip -qj "$ZIP_PATH" "$HANDLER_FILE"
+  fi
 fi
 
 SIZE_BYTES="$(stat -f%z "$ZIP_PATH" 2>/dev/null || stat -c%s "$ZIP_PATH")"

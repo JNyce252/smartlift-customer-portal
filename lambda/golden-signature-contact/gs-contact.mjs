@@ -116,8 +116,11 @@ Write directly to Jeremy. Be specific and practical — this is an internal brie
 
 const analyzeWithClaude = async (intakeData) => {
   const prompt = buildAnalysisPrompt(intakeData);
+  // Env-var driven so model bumps don't require a redeploy. Defaults to
+  // Sonnet 4.6 (current generation; was hardcoded to 4.5 prior to 2026-04-29).
+  // gs-contact is a low-volume internal tool so Sonnet is plenty capable.
   const response = await bedrock.send(new InvokeModelCommand({
-    modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    modelId: process.env.CLAUDE_MODEL || 'us.anthropic.claude-sonnet-4-6',
     contentType: 'application/json',
     accept: 'application/json',
     body: JSON.stringify({
