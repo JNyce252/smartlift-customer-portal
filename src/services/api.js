@@ -70,6 +70,45 @@ export const api = {
     const q = qs.toString();
     return request(`/admin/activity${q ? '?' + q : ''}`);
   },
+  // Feedback queue (super_admin). Default returns open + in_review; pass
+  // status=all (or any single status) to override. Filter by type/priority/company_id.
+  getAdminFeedback: (params = {}) => {
+    const qs = new URLSearchParams();
+    ['status','type','priority','company_id','limit'].forEach(k => {
+      if (params[k] !== undefined && params[k] !== '' && params[k] !== null) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    return request(`/admin/feedback${q ? '?' + q : ''}`);
+  },
+  // Patch one feedback item — status, priority, admin_notes (any subset).
+  // Server stamps resolved_at automatically when status is terminal.
+  patchAdminFeedback: (id, body) => request(`/admin/feedback/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }),
+  // Cross-tenant service-request queue (super_admin). Default = open + in_progress;
+  // pass status=open,in_progress,resolved (comma-separated) to filter.
+  getAdminServiceRequests: (params = {}) => {
+    const qs = new URLSearchParams();
+    ['status','priority','company_id','limit'].forEach(k => {
+      if (params[k] !== undefined && params[k] !== '' && params[k] !== null) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    return request(`/admin/service-requests${q ? '?' + q : ''}`);
+  },
+
+  // Submit feedback / feature request / bug report. Authenticated — any role
+  // (customer, owner, technician, sales, staff, super_admin) can submit.
+  // Lambda emails Jeremy via SES + persists to platform_feedback. Body shape:
+  // { type:'feature_request'|'system_issue'|'feedback'|'question',
+  //   subject, body, priority?:'low'|'medium'|'high'|'urgent', page_url? }
+  submitFeedback: (body) => request('/me/feedback', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...body,
+      page_url: body.page_url || (typeof window !== 'undefined' ? window.location.href : null),
+    }),
+  }),
 
   // O2: Renewal Calendar — fetches the customer's .ics and triggers a browser
   // download. Non-JSON response, so this bypasses the standard request() wrapper.

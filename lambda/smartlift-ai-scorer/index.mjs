@@ -63,8 +63,10 @@ Based on this information, provide your analysis in the following JSON format on
   "lead_score": <refined lead score 0-100>
 }`;
 
+  // Read model from env var so swapping requires only a Lambda env update.
+  // Default to Opus 4.7 — internal sales analysis, low-volume, premium reasoning matters.
   const command = new InvokeModelCommand({
-    modelId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    modelId: process.env.CLAUDE_MODEL || "us.anthropic.claude-opus-4-7",
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify({
@@ -83,22 +85,58 @@ Based on this information, provide your analysis in the following JSON format on
   return JSON.parse(clean);
 }
 
+// Compute a stable hash over the input fields that actually affect a prospect's
+// AI score. If the hash matches what's stored in prospects.ai_input_hash, the
+// underlying prospect hasn't changed in any way the model would care about,
+// and we can skip the Bedrock call entirely.
+import { createHash } from 'node:crypto';
+const computeAiInputHash = (prospect) => {
+  const fingerprint = {
+    name: prospect.name || null,
+    address: prospect.address || null,
+    city: prospect.city || null,
+    state: prospect.state || null,
+    rating: prospect.rating || null,
+    total_reviews: prospect.total_reviews || null,
+    business_status: prospect.business_status || null,
+    website: prospect.website || null,
+    estimated_elevators: prospect.estimated_elevators || null,
+    estimated_floors: prospect.estimated_floors || null,
+    building_age: prospect.building_age || null,
+    // Bump this version any time the prompt or model materially changes —
+    // forces re-scoring of all prospects. Tag with model + intent.
+    prompt_version: 'v1-opus-4-7',
+  };
+  return createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
+};
+
 export const handler = async (event) => {
   console.log('AI Scorer starting, event:', JSON.stringify(event));
-  
+
   const singleProspectId = event.prospect_id || null;
+  const force = event.force === true; // bypass cache when called with {force:true}
   const results = [];
-  
+
   try {
     const prospectsResult = singleProspectId
       ? await pool.query('SELECT * FROM prospects WHERE id = $1', [singleProspectId])
       : await pool.query('SELECT * FROM prospects ORDER BY lead_score DESC NULLS LAST');
-    
+
     const prospects = prospectsResult.rows;
-    console.log(`Scoring ${prospects.length} prospects...`);
-    
+    console.log(`Scoring ${prospects.length} prospects... (force=${force})`);
+
+    let cacheHits = 0;
     for (const prospect of prospects) {
       try {
+        // Cache check — if input hash matches what's already stored, this prospect
+        // hasn't changed since last scoring. Skip Bedrock entirely.
+        const hash = computeAiInputHash(prospect);
+        if (!force && prospect.ai_input_hash === hash) {
+          cacheHits++;
+          results.push({ id: prospect.id, name: prospect.name, status: 'cached', lead_score: prospect.lead_score });
+          continue;
+        }
+
         console.log(`Scoring: ${prospect.name}`);
         const ai = await scoreProspectWithAI(prospect);
         
@@ -137,11 +175,14 @@ export const handler = async (event) => {
           ai.ai_recommendation
         ]);
         
-        // Update prospect lead_score
+        // Update prospect lead_score AND store the input hash so subsequent
+        // identical-input invocations short-circuit before Bedrock.
         await pool.query(`
-          UPDATE prospects SET lead_score = $1, updated_at = NOW() WHERE id = $2
-        `, [ai.lead_score, prospect.id]);
-        
+          UPDATE prospects
+             SET lead_score = $1, ai_input_hash = $2, updated_at = NOW()
+           WHERE id = $3
+        `, [ai.lead_score, computeAiInputHash(prospect), prospect.id]);
+
         results.push({ id: prospect.id, name: prospect.name, status: 'scored', lead_score: ai.lead_score });
         console.log(`Scored ${prospect.name}: lead_score=${ai.lead_score}`);
         
@@ -151,9 +192,15 @@ export const handler = async (event) => {
       }
     }
     
+    const scored = results.filter(r => r.status === 'scored').length;
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'AI scoring complete', results })
+      body: JSON.stringify({
+        message: 'AI scoring complete',
+        bedrock_calls: scored,
+        cache_hits: cacheHits,
+        results,
+      })
     };
     
   } catch (error) {

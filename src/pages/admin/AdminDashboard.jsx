@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Users, UserCheck, Activity, AlertTriangle, Wrench, Sparkles,
   TrendingUp, TrendingDown, Minus, Database, Zap, ChevronRight, Clock,
+  MessageSquare,
 } from 'lucide-react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { api } from '../../services/api';
@@ -217,6 +218,9 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [now, setNow] = useState(Date.now());
+  // Feedback queue counts come from a side-fetch since the main /admin/dashboard
+  // payload doesn't include them yet — keeps the dashboard endpoint stable.
+  const [feedbackCounts, setFeedbackCounts] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -225,12 +229,18 @@ const AdminDashboard = () => {
         .then(d => { if (!cancelled) setData(d); })
         .catch(e => { if (!cancelled) setError(e.message); })
         .finally(() => { if (!cancelled) setLoading(false); });
+      // Lightweight side-fetch: just need the counts. limit=1 to skip rows.
+      api.getAdminFeedback({ limit: 1 })
+        .then(d => { if (!cancelled) setFeedbackCounts(d.counts || {}); })
+        .catch(() => { /* non-fatal */ });
     };
     load();
     const interval = setInterval(load, 60_000); // soft auto-refresh once a minute
     const tick = setInterval(() => setNow(Date.now()), 30_000);
     return () => { cancelled = true; clearInterval(interval); clearInterval(tick); };
   }, []);
+
+  const openFeedback = (feedbackCounts.open || 0) + (feedbackCounts.in_review || 0);
 
   const totalActivity14d = useMemo(() => (data?.activity_14d || []).reduce((s, p) => s + p.count, 0), [data]);
 
@@ -262,6 +272,60 @@ const AdminDashboard = () => {
           Failed to load dashboard: {error}
         </div>
       )}
+
+      {/* ---------- TRIAGE CARDS ---------- */}
+      {/* Two queues the founder will check most often: ops (tickets) + product (feedback).
+          These are CTAs, not just KPIs — clicking jumps straight into the queue. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+        <Link
+          to="/admin/service-requests"
+          className={`group bg-gradient-to-br from-gray-900 to-gray-900/40 border rounded-xl p-4 hover:border-purple-700/60 transition-colors ${
+            data?.tickets_emergency_24h > 0 ? 'border-red-700/60' : 'border-gray-800'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Wrench className={`w-4 h-4 ${data?.tickets_emergency_24h > 0 ? 'text-red-400' : 'text-amber-400'}`} />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Service requests</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-white tabular-nums">{loading ? '—' : fmtNum(data?.tickets_open)}</span>
+                <span className="text-sm text-gray-400">open across all tenants</span>
+              </div>
+              {data?.tickets_emergency_24h > 0 && (
+                <div className="mt-2 inline-flex items-center gap-1.5 bg-red-900/40 border border-red-700/60 rounded px-2 py-0.5 text-xs text-red-200">
+                  <AlertTriangle className="w-3 h-3" />
+                  {data.tickets_emergency_24h} emergency in last 24h
+                </div>
+              )}
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
+          </div>
+        </Link>
+
+        <Link
+          to="/admin/feedback"
+          className="group bg-gradient-to-br from-gray-900 to-gray-900/40 border border-gray-800 rounded-xl p-4 hover:border-purple-700/60 transition-colors"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <MessageSquare className="w-4 h-4 text-blue-400" />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-gray-500">Feedback</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-white tabular-nums">{fmtNum(openFeedback)}</span>
+                <span className="text-sm text-gray-400">unresolved</span>
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                {(feedbackCounts.open || 0)} open · {(feedbackCounts.in_review || 0)} in review · {(feedbackCounts.resolved || 0)} resolved
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all flex-shrink-0 mt-1" />
+          </div>
+        </Link>
+      </div>
 
       {/* ---------- KPI GRID with sparklines ---------- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">

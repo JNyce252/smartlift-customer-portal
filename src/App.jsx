@@ -33,6 +33,8 @@ import ElevatorHistory from './pages/customer/ElevatorHistory';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminTenants from './pages/admin/AdminTenants';
 import AdminActivity from './pages/admin/AdminActivity';
+import AdminServiceRequests from './pages/admin/AdminServiceRequests';
+import AdminFeedback from './pages/admin/AdminFeedback';
 
 function App() {
   return (
@@ -67,10 +69,12 @@ function App() {
           <Route path="/customer/ask" element={<PrivateRoute requiredRole="customer"><AskSmarterlift /></PrivateRoute>} />
           <Route path="/customer/elevator/:id/history" element={<PrivateRoute requiredRole="customer"><ElevatorHistory /></PrivateRoute>} />
           {/* Platform admin console — gated to SuperAdmin role only */}
-          <Route path="/admin/dashboard" element={<PrivateRoute requiredRole="super_admin"><AdminDashboard /></PrivateRoute>} />
-          <Route path="/admin/tenants"   element={<PrivateRoute requiredRole="super_admin"><AdminTenants /></PrivateRoute>} />
-          <Route path="/admin/activity"  element={<PrivateRoute requiredRole="super_admin"><AdminActivity /></PrivateRoute>} />
-          <Route path="/admin"           element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin/dashboard"        element={<PrivateRoute requiredRole="super_admin"><AdminDashboard /></PrivateRoute>} />
+          <Route path="/admin/tenants"          element={<PrivateRoute requiredRole="super_admin"><AdminTenants /></PrivateRoute>} />
+          <Route path="/admin/service-requests" element={<PrivateRoute requiredRole="super_admin"><AdminServiceRequests /></PrivateRoute>} />
+          <Route path="/admin/feedback"         element={<PrivateRoute requiredRole="super_admin"><AdminFeedback /></PrivateRoute>} />
+          <Route path="/admin/activity"         element={<PrivateRoute requiredRole="super_admin"><AdminActivity /></PrivateRoute>} />
+          <Route path="/admin"                  element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
