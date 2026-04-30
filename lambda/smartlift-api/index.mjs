@@ -344,8 +344,13 @@ export const handler = async (event) => {
       }
 
       // Per-IP rate limit: max 5 submissions in last 24h. Stops a single bot
-      // from filling the queue. Falls open on DB error — never blocks legit
-      // signups because the rate-limit check failed.
+      // from filling the queue.
+      //
+      // AM-5: fail CLOSED on DB error. Falling open here let an attacker who
+      // could induce a brief DB failure window push hundreds of requests
+      // through. Brief unavailability (503) is cheaper than a queue flood, and
+      // the rate-limit check is on the DB the same Aurora instance every other
+      // request hits — if it's down, we have bigger problems anyway.
       const ip = event.requestContext?.identity?.sourceIp
               || event.headers?.['X-Forwarded-For']?.split(',')[0]?.trim()
               || event.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
@@ -360,7 +365,14 @@ export const handler = async (event) => {
           if ((rl.rows[0]?.n || 0) >= 5) {
             return respondTo(event, 429, { error: 'rate_limited', message: 'Too many requests from your network. Please email us directly at nyceguy@thegoldensignature.com.' });
           }
-        } catch (e) { /* fall open */ }
+        } catch (e) {
+          console.error('[demo-requests] rate-limit check failed; refusing:', e.message);
+          return respondTo(event, 503, {
+            error: 'rate_check_unavailable',
+            message: 'Temporarily unable to accept demo requests. Please try again in 30 seconds, or email us directly at nyceguy@thegoldensignature.com.',
+            retry_after_seconds: 30,
+          });
+        }
       }
 
       const userAgent = String(event.headers?.['User-Agent'] || event.headers?.['user-agent'] || '').slice(0, 500);
@@ -3323,6 +3335,33 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
       const priority = allowedPriorities.has(body.priority) ? body.priority : 'medium';
 
       const userEmail = decodeJWT(event)?.email || null;
+
+      // AM-1: per-user rate limit. Mirrors the CH-1 emergency-rate-limit pattern.
+      // Caps: 10/hour, 50/day per user_email. SuperAdmin (founder testing) and
+      // unauthenticated edge cases (no email) skip the check. Falls open on DB
+      // error — never block legitimate feedback because the rate-limit query failed.
+      if (userEmail && authRole !== 'super_admin') {
+        try {
+          const rl = await pool.query(
+            `SELECT
+               COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 hour')::int  AS hour_count,
+               COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours')::int AS day_count
+             FROM platform_feedback
+             WHERE user_email = $1`,
+            [userEmail]
+          );
+          const { hour_count, day_count } = rl.rows[0] || { hour_count: 0, day_count: 0 };
+          if (hour_count >= 10 || day_count >= 50) {
+            return respond(429, {
+              error: 'rate_limited',
+              message: hour_count >= 10
+                ? "You've sent 10 feedback items in the last hour. Try again shortly."
+                : "You've sent 50 feedback items in the last 24 hours. Try again tomorrow.",
+            });
+          }
+        } catch (e) { /* fall open: never block real feedback on rate-check failure */ }
+      }
+
       // AH-1: page_url is rendered as <a href={...}> in src/pages/admin/AdminFeedback.jsx.
       // Without a scheme check, any authenticated caller (including a Customer at any
       // tenant) can inject a `javascript:` or `data:text/html` URI that executes in the
@@ -3580,10 +3619,20 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
       const updated = await pool.query(`
         UPDATE platform_feedback SET ${sets.join(', ')}
         WHERE id = $${params.length}
-        RETURNING id, status, priority, admin_notes, resolved_at, updated_at
+        RETURNING id, company_id, status, priority, admin_notes, resolved_at, updated_at
       `, params);
       if (!updated.rows.length) return respond(404, { error: 'not_found' });
-      return respond(200, updated.rows[0]);
+
+      // AM-2: audit trail for SuperAdmin mutations on cross-tenant feedback. The
+      // company_id on the row may be null (platform-level feedback); logActivity
+      // accepts that since activity_log.company_id is now nullable.
+      const fb = updated.rows[0];
+      await logActivity(
+        pool, fb.company_id, decodeJWT(event)?.email || null,
+        'feedback_updated', 'platform_feedback', fb.id,
+        { status: fb.status, priority: fb.priority, has_admin_notes: !!fb.admin_notes }
+      );
+      return respond(200, fb);
     }
 
     // GET /admin/service-requests — every service ticket across every tenant.
@@ -3699,6 +3748,17 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
         WHERE id = $${params.length}
         RETURNING id, status, admin_notes, updated_at
       `, params);
+
+      // AM-2: audit trail for SuperAdmin mutations on demo requests. company_id
+      // is null until approval (the demo_request has no tenant yet); rely on
+      // activity_log.company_id being nullable post-AM-2.
+      if (updated.rows.length) {
+        await logActivity(
+          pool, null, decodeJWT(event)?.email || null,
+          'demo_request_updated', 'demo_request', drId,
+          { status: updated.rows[0].status, has_admin_notes: !!updated.rows[0].admin_notes }
+        );
+      }
       if (!updated.rows.length) return respond(404, { error: 'not_found' });
       return respond(200, updated.rows[0]);
     }
@@ -3845,6 +3905,24 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
       } catch (mailErr) {
         console.error('[approve] welcome email failed (provisioning succeeded regardless):', mailErr.message);
       }
+
+      // AM-2: audit trail for the highest-stakes admin mutation. If a SuperAdmin
+      // credential is ever stolen, this row is the difference between knowing
+      // exactly which tenants were created and a forensic black hole. The row
+      // attaches to the new tenant (newCompanyId) so the audit also surfaces
+      // when listing the tenant's history.
+      await logActivity(
+        pool, newCompanyId, decodeJWT(event)?.email || null,
+        'tenant_provisioned', 'company', newCompanyId,
+        {
+          demo_request_id: drId,
+          owner_email: ownerEmail,
+          owner_name: ownerName || null,
+          slug,
+          source: dr.source || null,
+          trial_days: 14,
+        }
+      );
 
       return respond(200, {
         success: true,
