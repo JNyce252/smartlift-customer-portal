@@ -160,13 +160,29 @@ export const handler = async (event) => {
   console.log('AI Scorer starting, event:', JSON.stringify(event));
 
   const singleProspectId = event.prospect_id || null;
+  const companyId = event.company_id || null;
   const force = event.force === true; // bypass cache when called with {force:true}
   const results = [];
 
+  // M-9: refuse to run without a tenant scope. Pre-fix, the all-prospects path
+  // walked every tenant's prospects when invoked without prospect_id — a Lambda
+  // misconfiguration or a future caller forgetting to pass company_id would
+  // leak cross-tenant data into elevator_intelligence (which has its own
+  // company_id on the prospect, but the Bedrock spend is platform-wide).
+  // The only legitimate caller (POST /ai/rescore-all in smartlift-api) already
+  // passes company_id; this just enforces the contract.
+  if (!companyId) {
+    console.error('[ai-scorer] M-9: invoked without company_id — refusing to scan cross-tenant. Event:', JSON.stringify(event));
+    return { statusCode: 400, body: JSON.stringify({ error: 'company_id_required' }) };
+  }
+
   try {
+    // Always filter by company_id. If prospect_id is also given, both filters
+    // apply — defense in depth: a stale or forged prospect_id from another
+    // tenant won't return a row.
     const prospectsResult = singleProspectId
-      ? await pool.query('SELECT * FROM prospects WHERE id = $1', [singleProspectId])
-      : await pool.query('SELECT * FROM prospects ORDER BY lead_score DESC NULLS LAST');
+      ? await pool.query('SELECT * FROM prospects WHERE id = $1 AND company_id = $2', [singleProspectId, companyId])
+      : await pool.query('SELECT * FROM prospects WHERE company_id = $1 ORDER BY lead_score DESC NULLS LAST', [companyId]);
 
     const prospects = prospectsResult.rows;
     console.log(`Scoring ${prospects.length} prospects... (force=${force})`);

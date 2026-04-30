@@ -180,8 +180,21 @@ export const handler = async (event) => {
         </div>
       `;
 
+      // M-7: per-tenant SES Source. The pre-fix hardcoded 'derald@swcabs.com'
+      // worked for tenant 1 (Southwest Cabs) but breaks every other tenant — a
+      // tenant-2 owner would see emails purportedly from Derald at a different
+      // company. Worse, SES would reject the send unless that exact address is
+      // verified, which scales poorly.
+      //
+      // Fix: send from a Smarterlift-owned, SES-verified sender for every
+      // tenant, with a per-tenant display name so the recipient still sees who
+      // the email is "from" in their inbox. ReplyTo points at the tenant's own
+      // owner email so customer questions land in the right place.
+      const senderEmail = process.env.SES_SENDER_EMAIL || 'nyceguy252@gmail.com';
+      const senderDisplay = (data.company || 'Smarterlift').replace(/[<>"]/g, '').slice(0, 80);
       await ses.send(new SendEmailCommand({
-        Source: 'derald@swcabs.com',
+        Source: `"${senderDisplay} via Smarterlift" <${senderEmail}>`,
+        ReplyToAddresses: [ownerEmail],
         Destination: { ToAddresses: [ownerEmail] },
         Message: {
           Subject: { Data: `🔔 Maintenance Reminder — ${data.schedules.length} service${data.schedules.length > 1 ? 's' : ''} ${overdueItems.length > 0 ? 'OVERDUE' : 'coming up'}` },

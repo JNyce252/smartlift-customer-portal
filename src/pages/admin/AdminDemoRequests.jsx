@@ -333,18 +333,30 @@ const AdminDemoRequests = () => {
 const ApproveModal = ({ request, onClose, onApproved }) => {
   const [companyName, setCompanyName] = useState(request.company || request.name || '');
   const [ownerEmail, setOwnerEmail]   = useState(request.email || '');
+  // AM-4: defense against intake-typo takeover. The tenant approval flow
+  // forces email_verified=true on AdminCreateUser, which means whatever email
+  // address is on the demo_request gets a temp password with no verification
+  // step. Force the founder to type the email twice — if they don't match the
+  // submit is blocked. Initially seeded empty so the founder has to actually
+  // glance at the address rather than hitting Approve on autopilot.
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [ownerName, setOwnerName]     = useState(request.name || '');
   const [submitting, setSubmitting]   = useState(false);
   const [result, setResult]           = useState(null);
   const [error, setError]             = useState(null);
 
+  const normalizedOwnerEmail   = ownerEmail.trim().toLowerCase();
+  const normalizedConfirmEmail = confirmEmail.trim().toLowerCase();
+  const emailsMatch            = normalizedOwnerEmail.length > 0 && normalizedOwnerEmail === normalizedConfirmEmail;
+
   const submit = async () => {
     if (!companyName.trim() || !ownerEmail.trim()) { setError('Company name and owner email are required.'); return; }
+    if (!emailsMatch) { setError('Confirm owner email must match.'); return; }
     setSubmitting(true); setError(null);
     try {
       const r = await api.approveDemoRequest(request.id, {
         company_name: companyName.trim(),
-        owner_email: ownerEmail.trim().toLowerCase(),
+        owner_email: normalizedOwnerEmail,
         owner_name: ownerName.trim(),
       });
       setResult(r);
@@ -403,9 +415,34 @@ const ApproveModal = ({ request, onClose, onApproved }) => {
                 value={ownerEmail}
                 onChange={e => setOwnerEmail(e.target.value.slice(0, 320))}
                 type="email"
+                autoComplete="off"
                 className="mt-1 w-full bg-gray-950 border border-gray-700 text-white text-sm px-3 py-2 rounded focus:outline-none focus:border-purple-500"
               />
-              <span className="text-[11px] text-gray-600 mt-0.5 block">Cognito will email this address with a temporary password.</span>
+              <span className="text-[11px] text-gray-600 mt-0.5 block">Cognito will email this address with a temporary password. Triple-check it — Cognito treats this address as pre-verified.</span>
+            </label>
+
+            <label className="block text-xs text-gray-400 mb-3">
+              Confirm owner email <span className="text-red-400">*</span>
+              <input
+                value={confirmEmail}
+                onChange={e => setConfirmEmail(e.target.value.slice(0, 320))}
+                type="email"
+                autoComplete="off"
+                placeholder="Re-type to confirm"
+                className={`mt-1 w-full bg-gray-950 border text-white text-sm px-3 py-2 rounded focus:outline-none ${
+                  confirmEmail.length === 0
+                    ? 'border-gray-700 focus:border-purple-500'
+                    : emailsMatch
+                      ? 'border-emerald-700 focus:border-emerald-500'
+                      : 'border-red-700 focus:border-red-500'
+                }`}
+              />
+              {confirmEmail.length > 0 && !emailsMatch && (
+                <span className="text-[11px] text-red-400 mt-0.5 block">Doesn't match the address above.</span>
+              )}
+              {confirmEmail.length > 0 && emailsMatch && (
+                <span className="text-[11px] text-emerald-400 mt-0.5 block">✓ Matches.</span>
+              )}
             </label>
 
             <label className="block text-xs text-gray-400 mb-4">
@@ -427,8 +464,9 @@ const ApproveModal = ({ request, onClose, onApproved }) => {
               <button onClick={onClose} disabled={submitting} className="text-sm text-gray-400 hover:text-white px-3 py-1.5">Cancel</button>
               <button
                 onClick={submit}
-                disabled={submitting}
-                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-1.5 rounded-lg flex items-center gap-1.5"
+                disabled={submitting || !companyName.trim() || !emailsMatch}
+                title={!emailsMatch ? 'Confirm owner email must match before approval' : ''}
+                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-1.5 rounded-lg flex items-center gap-1.5"
               >
                 <Send className="w-3.5 h-3.5" />
                 {submitting ? 'Provisioning…' : 'Approve & provision'}
