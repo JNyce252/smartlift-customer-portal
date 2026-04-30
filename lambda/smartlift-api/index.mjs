@@ -3892,8 +3892,15 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
         // it in the DB transaction. We track which Cognito side-effects landed
         // and explicitly undo them via AdminDeleteUser if a later step fails.
         cognitoOwnerEmailForRollback = ownerEmail;
+        let cognitoSub;
         try {
-          await cognitoClient.send(new AdminCreateUserCommand({
+          // AdminCreateUser response contains the new user's `sub` claim — we
+          // need this for company_users.cognito_sub (NOT NULL). Without it the
+          // INSERT fails the constraint, the transaction rolls back, and the
+          // tenant fails to provision. (Pre-AM-3 the same INSERT had ON CONFLICT
+          // DO NOTHING + non-fatal logging, which silently shipped tenants where
+          // the new owner couldn't sign in via getAuthContext.)
+          const createResp = await cognitoClient.send(new AdminCreateUserCommand({
             UserPoolId: USER_POOL_ID,
             Username: ownerEmail,
             UserAttributes: [
@@ -3904,6 +3911,12 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
             DesiredDeliveryMediums: ['EMAIL'], // Cognito sends invite + temp password
           }));
           cognitoUserCreated = true;
+          cognitoSub = createResp?.User?.Attributes?.find(a => a.Name === 'sub')?.Value;
+          if (!cognitoSub) {
+            // Cognito always returns sub on AdminCreateUser. If it doesn't, the
+            // SDK shape changed or something is genuinely wrong. Treat as fatal.
+            throw new Error('AdminCreateUser response missing sub attribute');
+          }
           // Owners group implies the granular role; CompanyUsers is the umbrella
           // that gates routes via /me/* — same pattern as /team/users/invite.
           // If either AddUserToGroup throws, the catch block AdminDeleteUsers the
@@ -3939,11 +3952,13 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
         // previous version; making it fatal because without this row the new
         // owner can sign in to Cognito but getAuthContext returns 401 ("user
         // not provisioned"). Better to fail loud and let the admin retry.
+        // cognito_sub captured above from the AdminCreateUser response — this
+        // column is NOT NULL on company_users.
         try {
           await client.query(
-            `INSERT INTO company_users (company_id, email, role, status, created_at)
-             VALUES ($1, $2, 'owner', 'active', NOW())`,
-            [newCompanyId, ownerEmail]
+            `INSERT INTO company_users (company_id, email, cognito_sub, role, status, created_at)
+             VALUES ($1, $2, $3, 'owner', 'active', NOW())`,
+            [newCompanyId, ownerEmail, cognitoSub]
           );
         } catch (e) {
           console.error('[approve] company_users INSERT failed:', e.message);
