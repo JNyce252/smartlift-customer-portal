@@ -34,6 +34,205 @@ You've already done deep work on this project in prior sessions. Don't rediscove
 **Where I left off** (update this each time):
 
 ```
+Last session date: 2026-04-30 (long sweep — 10 commits to main)
+
+Last actions (this session, 10 commits in order):
+
+  e199fd4 security(AH-1): scheme-validate page_url server + client. Close
+          admin-feedback stored XSS. Server: POST /me/feedback drops non-http(s)
+          page_url to ''. Client: AdminFeedback.jsx renders link only when
+          /^https?:\/\/[^\s<>"]+$/i matches; otherwise ⚠ chip with raw value
+          in title. AH-1 doc lives in docs/ADMIN_REVIEW.md.
+
+  dccfa7e iam(bedrock): add bare anthropic.claude-opus-4-7 ARNs in us-east-1,
+          us-east-2, us-west-2 to infra/iam/bedrock-invoke-model-v2.json. Fixes
+          GET /me/elevator/:id/insights AccessDenied — inference profile fans
+          out to bare ARNs cross-region; Sonnet/Haiku had this coverage but
+          Opus didn't.
+
+  a89a582 frontend: favicon.ico (4-size ICO) + apple-touch-icon.png + index.html
+          metadata refresh. Title "SmartLift UI" → "Smarterlift". Theme color
+          #000 → #7C3AED. Description updated to current product framing.
+
+  a1b4fb1 M-8 partial: dedupe Google Maps key. public/index.html now uses CRA
+          %REACT_APP_GOOGLE_PLACES_API_KEY% substitution. RouteOptimizer.jsx
+          drops the hardcoded fallback. ProspectDetails CSE keys deferred
+          (now LOW since GCP-restricted). Real M-8 defense is GCP-side
+          HTTP-referrer + API-restriction + IP-allowlist, all applied this
+          session by you on all 3 keys (Maps Platform, CSE, Server-Side).
+
+  3b87a62 security(M-2,AM-1,AM-2,AM-5): four small wins in one Lambda deploy.
+          M-2: aws rds modify-db-cluster --deletion-protection (live). AM-1:
+          /me/feedback rate-limit 10/h, 50/d per user_email; super_admin
+          exempt. AM-2: logActivity calls on PATCH /admin/feedback,
+          PATCH /admin/demo-requests, POST /admin/demo-requests/:id/approve;
+          activity_log.company_id is now NULL-allowed (DDL via Data API).
+          AM-5: /demo-requests rate-limit DB error fails CLOSED with 503 +
+          retry_after_seconds=30 instead of falling open.
+
+  dbef773 security(AM-3): tenant-provisioning hardening. Single Postgres
+          transaction wraps companies INSERT + company_users INSERT +
+          demo_requests UPDATE + activity_log INSERT. pg_advisory_xact_lock
+          keyed on demo_request_id serializes concurrent Approve clicks.
+          Idempotent retry returns existing tenant info with idempotent:true.
+          AdminDeleteUser rollback if Cognito group attach or company_users
+          INSERT fail. AL-1: slug random suffix 4 → 8 chars.
+
+  814d695 security(AM-3 follow-up): capture cognito_sub from AdminCreateUser
+          response, pass to company_users INSERT (column is NOT NULL — pre-fix
+          the same INSERT was non-fatal with ON CONFLICT DO NOTHING which
+          silently shipped tenants whose new owner couldn't sign in via
+          getAuthContext). Also added AdminDeleteUser to the role's inline
+          policy (cognito-user-management) — saved as
+          infra/iam/cognito-user-management-v2.json for reproducibility.
+
+  d6bb61a security(AM-4,M-7,M-9): three independent fixes across two Lambdas
+          and the React tree. AM-4: AdminDemoRequests ApproveModal now
+          requires confirm-email double-entry (live mismatch warning, submit
+          gated). M-7: maintenance-reminder Source is now
+          "<tenant company> via Smarterlift" <SES_SENDER_EMAIL || nyceguy252@gmail.com>
+          with ReplyTo=ownerEmail; tenant-2 ready. M-9: ai-scorer requires
+          event.company_id and scopes all SELECTs by tenant. Verified live:
+          empty event → 400 company_id_required; company_id=9999 → 0 prospects
+          scanned (no cross-tenant leak).
+
+  113e8fe security(CM-1,CM-3,CM-4,CM-7): customer-portal MEDIUM batch.
+          CM-1: BillingPayments "Ready to pay online?" mailto stub replaced
+          with informational "Online payments coming soon" chip. CM-3:
+          Documents.jsx file_url scheme-validated /^https?:\/\/[^\s<>"]+$/i,
+          rel="noopener noreferrer" added (mirrors AH-1). CM-4:
+          BillingPayments line_items + MaintenanceHistory parts_replaced
+          inline JSON.parse wrapped with try/catch + empty-array fallback.
+          CM-7: GET /tickets accepts ?limit= (default 100, ceiling 500);
+          Support.jsx sends ?limit=5 instead of pulling everything and slicing
+          client-side. CM-6 + CM-8 closed-as-stale (server doesn't read
+          category; PrivateRoute is already symmetric). CM-2, CM-5, CM-9
+          deferred.
+
+  bc6e72e security(team-invite): /team/users/invite was creating a Cognito
+          user + groups but never INSERTed into company_users — invited
+          members could sign in to Cognito but got 401 ("user_not_provisioned")
+          on every page load. Same shape bug as AM-3. Fix: capture cognito_sub
+          from AdminCreateUser, INSERT company_users, validate userRole
+          against {owner,sales,technician,staff} server-side, AdminDeleteUser
+          rollback on any failure downstream. Trust-diff verified (mirrors
+          AM-3 verified pattern).
+
+Plus this session's GCP/AWS console + MCP work (no commits, but state changed):
+  - Aurora deletionProtection ACTIVE (M-2)
+  - smartlift-api-role-zg1jcbas inline policy `cognito-user-management`:
+    added AdminDeleteUser action
+  - smartlift-api-role-zg1jcbas inline policy `Bedrock-InvokeModel`:
+    added 3 bare anthropic.claude-opus-4-7 cross-region ARNs
+  - Anthropic Bedrock use-case form submitted in us-east-2 + us-west-2 →
+    Sonnet 4.6 + Opus 4.7 cross-region inference profiles work end-to-end
+    (verified via converse API returning "working")
+  - GCP API keys: 3 keys restricted (Maps Platform key → 4 APIs + websites
+    allowlist; SmartLift Custom Search key → Custom Search API only +
+    websites allowlist; Smarterlift Server-Side Lambda key → IP-allowlisted
+    to NAT EIP 3.229.89.245)
+
+Schema state (Aurora hotelleads, 39 tables — same as prior session):
+  - activity_log.company_id is now NULLable (DDL via Data API). Existing
+    handlers continue to write company_id where appropriate; new platform-
+    level audit rows (PATCH /admin/demo-requests, etc.) write NULL.
+  - demo_requests bootstrapped via Data API during AM-3 testing (same DDL
+    the Lambda's ensureDemoRequestsSchema would have produced). Currently
+    empty after smoke-test cleanup.
+  - All test rows from this session deleted (1 platform_feedback test row,
+    1 synthetic demo_request, 1 synthetic tenant + Cognito user from AM-3
+    smoke test). Zero residue confirmed.
+
+State of SECURITY.md findings (management portal):
+   CRITICAL:  5/5 closed
+   HIGH:     8/8 closed
+   MEDIUM:   7/10 closed (M-1 errors, M-2 deletion-protect 2026-04-30,
+                          M-5 token-key, M-6 path stripper, M-7 per-tenant
+                          SES 2026-04-30, M-8a customer scoping, M-9 cross-
+                          tenant scorer 2026-04-30). Open: M-3 multi-AZ,
+                          M-4 PI, M-8 ProspectDetails CSE hygiene LOW now,
+                          M-10 cosmetic gs-contact gmail Source.
+   LOW:      4/10 closed (assorted cleanups)
+
+State of CUSTOMER_PORTAL_REVIEW.md findings (customer portal):
+   CRITICAL:  0/0
+   HIGH:     3/3 closed (CH-1, CH-2, CH-3)
+   MEDIUM:   6/9 effectively closed (CM-1 stub-removed, CM-3 file_url scheme,
+                          CM-4 JSON.parse hardening, CM-6 stale-closed,
+                          CM-7 ?limit, CM-8 stale-closed). Open: CM-2 fetch
+                          normalization (hygiene), CM-5 customer profile
+                          editor (~2-3h feature), CM-9 catch-all redirect
+                          (cosmetic).
+   LOW:      0/10 closed (assorted polish, CL-1..CL-10)
+
+State of ADMIN_REVIEW.md findings (admin/demo/feedback surface):
+   HIGH:     1/1 closed (AH-1 stored XSS)
+   MEDIUM:   5/5 closed (AM-1 rate-limit, AM-2 audit log, AM-3 transactional
+                          provisioning + idempotency, AM-4 confirm-email,
+                          AM-5 fail-closed rate-limit). Plus AM-3 follow-up
+                          (cognito_sub + AdminDeleteUser IAM) and the latent
+                          /team/users/invite bug it surfaced.
+   LOW:      1/7 closed (AL-1 slug 4→8 char, in AM-3). Open: AL-2 ip_address
+                          PII retention TTL, AL-3 SuperAdmin route bleed,
+                          AL-4..AL-7 cosmetic.
+
+Next action:       Pick from open items list below. AL-2 + AL-3 + the small
+                   unfixed cleanup items make a tight ~30-45 min batch.
+                   CM-5 customer profile editor is the largest open item
+                   (~2-3h, real feature work, needs `GET /me/customer` +
+                   `PATCH /me/customer` + a CustomerProfile.jsx page).
+                   M-3 Aurora Multi-AZ + dual-NAT is a cost decision (~$32/mo
+                   extra NAT) for HA. M-4 Performance Insights enable is one
+                   `aws rds modify-db-instance` call.
+
+Open items by priority:
+  - CM-5 (MEDIUM, feature)               — customer profile editor; new
+                                          /me/customer GET + PATCH endpoints
+                                          + CustomerProfile.jsx page. Real
+                                          UX gap, biggest single item.
+  - CM-2 (MEDIUM, hygiene)               — normalize 5 customer pages from
+                                          raw fetch() to api.js wrappers.
+                                          Mechanical, ~20 min.
+  - M-3 (MEDIUM, cost decision)          — Aurora Multi-AZ + dual-AZ NAT.
+                                          ~$30/mo extra. Worth it before
+                                          tenant 2 onboards.
+  - M-4 (MEDIUM, ops)                    — enable Performance Insights on
+                                          Aurora. 1 CLI call.
+  - M-8 ProspectDetails CSE keys (LOW)   — move hardcoded keys to env vars
+                                          (now LOW since GCP-restricted).
+  - M-10 (LOW, cosmetic)                 — gs-contact SES Source uses gmail.
+  - CM-9 (LOW, cosmetic)                 — / catch-all redirect flicker.
+  - AL-2 (LOW)                           — demo_requests.ip_address >90 days
+                                          → NULL via scheduled task.
+  - AL-3 (LOW)                           — bounce SuperAdmin from /internal/*
+                                          and /customer/* to /admin/dashboard.
+  - AL-4..AL-7 (LOW)                     — userEmail dedup, schema bootstrap
+                                          formality, SES Subject newline strip,
+                                          honeypot rate-limit visibility.
+  - Customer-portal LOWs (CL-1..CL-10)   — see CUSTOMER_PORTAL_REVIEW.md.
+  - Optional H-6 follow-up (LOW)         — MFA REQUIRED for Owners-only
+                                          before tenant 2.
+  - Cleanup (LOW)                        — Aurora SG `tcp/22 from 52.95.4.19/32`
+                                          unused; split VPC interface endpoints
+                                          onto dedicated SG.
+  - AM-3 race-condition stress test      — didn't simulate concurrent Approve
+                                          clicks; lock + idempotency code is
+                                          believed correct.
+  - Step 1.2 (LOW)                       — tighten OPTIONS preflight CORS.
+
+Repo state (verified 2026-04-30 end-of-session):
+  - Branch: main, 0 ahead / 0 behind origin/main.
+  - HEAD: bc6e72e (security(team-invite): cognito_sub + rollback).
+  - Working tree: dirty — only this docs/SESSION_TEMPLATE.md edit pending.
+    Commit it as part of the doc-refresh push at session end.
+  - Stashes: none.
+```
+
+---
+
+## Previous "Where I left off" snapshot (2026-04-29, kept for reference)
+
+```
 Last session date: 2026-04-29
 
 Last actions (everything since the 2026-04-27 customer-portal-v1 ship — 8 commits on main):

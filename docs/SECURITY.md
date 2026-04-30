@@ -2,7 +2,11 @@
 
 _Generated 2026-04-26 from a complete pull of the live AWS account, all 6 Lambda sources, the React frontend, and a live introspection of the production Postgres schema. Every finding is grounded in a file:line, a configuration value, or a verified live test._
 
-> **Bottom line (updated 2026-04-27 second pass continuation):** **all 5 originally-CRITICAL and all 8 originally-HIGH findings are CLOSED.** Production data is no longer reachable from the open internet, the API has a Cognito Authorizer on every protected route, multi-tenancy fails closed, tokens flow through a single source of truth, dead schema tables are dropped, and the Cognito pool is hardened (DeletionProtection ACTIVE, MFA OPTIONAL with TOTP, sandbox tag removed, group precedence corrected). Remaining work is incremental: MEDIUM Step 7 (within-tenant customer scoping), MEDIUM M-3 (Aurora deletion protection + multi-AZ), and assorted LOW cleanups.
+> **Bottom line (updated 2026-04-30):** **all 5 originally-CRITICAL, all 8 originally-HIGH, and 7 of 10 MEDIUM findings are CLOSED.** Recent closures: M-2 (Aurora deletion protection — `aws rds modify-db-cluster --deletion-protection`, 2026-04-30), M-7 (per-tenant SES sender in maintenance-reminder via display-name pattern, 2026-04-30), M-9 (ai-scorer requires `company_id` and scopes all SELECTs by tenant, verified live, 2026-04-30). Earlier closures verified this session: M-1 (`internalError` returns generic 500 + request_id), M-5 (token-key fixed via C-4/C-5), M-6 (path stripper regex now matches `/^\/(prod|staging)(?=\/|$)/`).
+>
+> Remaining open MEDIUMs: M-3 Aurora Multi-AZ + dual-AZ NAT (cost decision, ~$30/mo extra), M-4 Performance Insights enable (1 CLI call), M-8 ProspectDetails CSE keys → env vars (downgraded to LOW since GCP-side HTTP-referrer + API restrictions + IP-allowlist are now applied to all 3 GCP keys), M-10 cosmetic gs-contact gmail SES Source.
+>
+> See docs/ADMIN_REVIEW.md for the admin/demo/feedback surface (all 1 HIGH + 5 MEDIUM closed) and docs/CUSTOMER_PORTAL_REVIEW.md for the customer portal (3 HIGH + 4 of 9 MEDIUM closed; 2 stale-closed; 3 deferred).
 
 ---
 

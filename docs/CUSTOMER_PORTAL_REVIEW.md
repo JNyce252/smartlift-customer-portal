@@ -2,7 +2,19 @@
 
 _Generated 2026-04-27 from a deep read of the 7 customer-portal pages, the auth/services/routing surface that supports them, and the corresponding `lambda/smartlift-api` route handlers. Findings are file:line-grounded._
 
-> **Bottom line (updated 2026-04-27, CH-3 done):** post the recent C-1..C-5 + H-1..H-8 + M-8a closures plus this session's customer-portal work (CH-1 priority cap + CH-2 contact-info de-hardcode + CH-3 column enumeration), **the customer portal has no CRITICAL or HIGH findings remaining.** Remaining work is a MEDIUM list of consistency / info-disclosure / unfinished-feature items, plus LOW polish. The Stripe/billing flow is the single largest unfinished feature.
+> **Bottom line (updated 2026-04-30):** customer portal has no CRITICAL or HIGH findings remaining. Of 9 original MEDIUMs, 4 are CLOSED, 2 are STALE-CLOSED (the doc described code that was already correct or had no actual attack vector), and 3 are deferred:
+>
+>  - **CM-1** Pay Now stub — CLOSED `113e8fe` 2026-04-30 (replaced with informational "Online payments coming soon" chip)
+>  - **CM-2** fetch normalization — open, deferred (mechanical hygiene, ~20 min)
+>  - **CM-3** Documents.jsx file_url scheme validation — CLOSED `113e8fe` 2026-04-30 (mirrors AH-1 pattern; non-http(s) URIs render as ⚠ chip with raw value in title; rel="noopener noreferrer" added)
+>  - **CM-4** JSON.parse hardening — CLOSED `113e8fe` 2026-04-30 (line_items in BillingPayments, parts_replaced in MaintenanceHistory; both wrapped in try/catch with empty-array fallback)
+>  - **CM-5** customer profile editor — open, deferred (real feature work, ~2-3h, needs `GET /me/customer` + `PATCH /me/customer` + page)
+>  - **CM-6** category whitelist — CLOSED-AS-STALE 2026-04-30 (Lambda's POST /tickets handler never read body.category — destructure on `lambda/.../index.mjs:2216` doesn't include it; no actual attack vector existed)
+>  - **CM-7** /tickets ?limit= — CLOSED `113e8fe` 2026-04-30 (server-side cap default 100, ceiling 500; Support.jsx sends ?limit=5)
+>  - **CM-8** PrivateRoute redirect symmetry — CLOSED-AS-STALE 2026-04-30 (`src/components/common/PrivateRoute.jsx:19-20` is already symmetric; doc was about a prior version)
+>  - **CM-9** / catch-all double-redirect — open, deferred (cosmetic flicker)
+>
+> CL-1..CL-10 LOWs all open. Stripe/billing remains the single largest unfinished feature (CM-1 was the read-only stub fix; full Stripe integration is a separate ~1-day project).
 
 ---
 

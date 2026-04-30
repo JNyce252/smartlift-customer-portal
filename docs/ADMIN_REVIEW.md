@@ -2,7 +2,18 @@
 
 _Generated 2026-04-29 from a deep read of the new SuperAdmin console (commits `694615a`, `dcef427`, `01ac1dd`, `e032395`), the public `/demo` flow + tenant provisioning, and the `/me/feedback` → `platform_feedback` path. Findings are file:line-grounded against `lambda/smartlift-api/index.mjs` and the React tree under `src/pages/admin/` + `src/components/admin/` + `src/components/common/`._
 
-> **Bottom line.** The auth boundary is correct: `getAuthContext` at `lambda/smartlift-api/index.mjs:162` is fail-closed, SuperAdmin is checked first (line 180), and `/admin/*` routes 403 for any other role at line 3307. Frontend gating via `<PrivateRoute requiredRole="super_admin">` at `src/App.jsx:77-83` is consistent. **However**, a stored XSS in the platform-feedback display path can let any authenticated user hijack the SuperAdmin session — that's the only HIGH. The remaining findings are operational hardening (rate limits, audit logging, atomicity of tenant provisioning, email verification trust).
+> **Bottom line (updated 2026-04-30).** All 1 HIGH and all 5 MEDIUM findings are CLOSED. AL-1 (slug 4-char suffix) closed as part of AM-3. Remaining LOWs (AL-2..AL-7) tracked in SESSION_TEMPLATE open-items list. Auth boundary remains sound (`getAuthContext` fail-closed, SuperAdmin check first, `/admin/*` 403 for any other role).
+>
+> Closure summary:
+>  - **AH-1** stored XSS — closed `e199fd4` 2026-04-29 (server scheme-validation + client guard, both shipped + tested via Aurora Data API insert + AdminFeedback render check)
+>  - **AM-1** rate-limit `/me/feedback` — closed `3b87a62` 2026-04-30 (10/h, 50/d per user_email; super_admin exempt)
+>  - **AM-2** audit logging on `/admin/*` mutations — closed `3b87a62` 2026-04-30 (3 logActivity calls + activity_log.company_id made nullable; tenant_provisioned audit row verified live in AM-3 smoke test)
+>  - **AM-3** tenant-provisioning hardening — closed `dbef773` + `814d695` 2026-04-30 (single-tx + advisory lock + AdminDeleteUser rollback + idempotent retry; full smoke test passed including idempotency proven by single audit row after two POSTs)
+>  - **AM-4** email-confirm in ApproveModal — closed `d6bb61a` 2026-04-30 (double-entry field + live mismatch warning + submit gated)
+>  - **AM-5** fail-closed `/demo-requests` rate-limit — closed `3b87a62` 2026-04-30 (catch returns 503, retry_after_seconds=30)
+>  - **AL-1** slug 4-char → 8-char random suffix — closed `dbef773` 2026-04-30 (~2.8T combos)
+>
+> Side bug surfaced + fixed: `/team/users/invite` (`lambda/.../index.mjs:4429` originally) had the same `cognito_sub` NOT NULL violation pattern as AM-3 — silently shipped Cognito users with no `company_users` row, blocking sign-in via `getAuthContext`. Fixed `bc6e72e` 2026-04-30.
 
 ---
 
