@@ -1,7 +1,8 @@
 import pg from 'pg';
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand,
   AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand,
-  AdminDisableUserCommand, AdminEnableUserCommand, AdminSetUserPasswordCommand } from '@aws-sdk/client-cognito-identity-provider';
+  AdminDisableUserCommand, AdminEnableUserCommand, AdminSetUserPasswordCommand,
+  AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -3765,173 +3766,306 @@ Return 3-5 watch_areas, ordered priority high→low. If the elevator is genuinel
 
     // POST /admin/demo-requests/:id/approve — the heavy one.
     // Provisions a tenant: companies row (status='trialing', 14-day trial) +
-    // Cognito Owner user + invite email. Wrapped so a Cognito failure rolls back
-    // the DB insert (best-effort: we delete the company row if Cognito throws).
+    // Cognito Owner user + welcome email.
+    //
+    // AM-3 hardening (vs. previous version):
+    //   1. Single Postgres transaction wraps companies INSERT, company_users
+    //      INSERT, demo_requests UPDATE, and the activity_log audit row. Either
+    //      all four land or none — no half-state where the tenant exists but the
+    //      audit trail doesn't.
+    //   2. pg_advisory_xact_lock keyed on demo_request_id serializes concurrent
+    //      Approve clicks. The lock auto-releases at COMMIT/ROLLBACK.
+    //   3. Idempotent: if the demo_request is already 'approved' and points to
+    //      an existing company, we return success with the existing tenant info
+    //      rather than 409. A retried click is harmless.
+    //   4. Cognito group-attach failures roll back the partially-created Cognito
+    //      user via AdminDeleteUserCommand before rolling back the DB. Previous
+    //      behavior left an orphan Cognito user with no group membership.
+    //   5. company_users INSERT is now fatal (was non-fatal). Without that row,
+    //      getAuthContext returns 401 and the new owner is locked out. Better to
+    //      fail loudly here than ship a tenant that can't sign in.
+    //   6. Audit row INSERT is part of the transaction, not a fire-and-forget
+    //      logActivity call. Cannot half-succeed.
+    //   7. Slug random suffix bumped from 4 to 8 chars (AL-1) to reduce
+    //      collision probability at scale.
+    //
+    // Welcome email stays after COMMIT and is non-fatal (matches prior behavior;
+    // a missed welcome email shouldn't roll back a successfully-provisioned tenant).
     if (method === 'POST' && path.match(/^\/admin\/demo-requests\/\d+\/approve$/)) {
       const drId = parseInt(path.split('/')[3], 10);
       const body = JSON.parse(event.body || '{}');
+      const adminEmail = decodeJWT(event)?.email || null;
 
-      // Pull the demo request first.
-      const drRes = await pool.query('SELECT * FROM demo_requests WHERE id = $1', [drId]);
-      if (!drRes.rows.length) return respond(404, { error: 'demo_request_not_found' });
-      const dr = drRes.rows[0];
-      if (dr.status === 'approved' || dr.status === 'converted') {
-        return respond(409, { error: 'already_approved', approved_company_id: dr.approved_company_id });
-      }
-
-      // Company name + slug. Caller can override via body.company_name; falls
-      // back to the demo request's company field then to the contact name.
-      const companyName = String(body.company_name || dr.company || dr.name).slice(0, 200).trim();
-      if (!companyName) return respond(400, { error: 'company_name_required' });
-      // kebab-case slug, ascii-only. Suffix with random 4-char id for uniqueness.
-      const slugBase = companyName.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'company';
-      const slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
-
-      // Owner email defaults to the demo request's email.
-      const ownerEmail = String(body.owner_email || dr.email).toLowerCase().trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
-        return respond(400, { error: 'invalid_owner_email' });
-      }
-      const ownerName = String(body.owner_name || dr.name).slice(0, 200).trim();
-
-      // INSERT companies. status='trialing' triggers ALLOWED_COMPANY_STATUSES
-      // pass in getAuthContext so the owner can sign in immediately.
-      let newCompanyId;
+      // Acquire a dedicated client so the advisory lock + DML stay on one
+      // session. pool.connect() returns a pooled connection we must release
+      // in finally. Each call here uses `client.query`, NOT `pool.query`.
+      const client = await pool.connect();
+      let cognitoUserCreated = false;          // tracked outside the try so the catch can clean up
+      let cognitoOwnerEmailForRollback = null; // captures the username for AdminDeleteUser
       try {
-        const cRes = await pool.query(
-          `INSERT INTO companies (name, slug, status, contact_email, contact_phone, trial_ends_at, plan_type, subscription_status)
-           VALUES ($1, $2, 'trialing', $3, $4, NOW() + INTERVAL '14 days', 'standard', 'trialing')
-           RETURNING id`,
-          [companyName, slug, ownerEmail, dr.phone || null]
-        );
-        newCompanyId = cRes.rows[0].id;
-      } catch (e) {
-        console.error('[approve] companies INSERT failed:', e.message);
-        return respond(500, { error: 'company_create_failed', detail: e.message });
-      }
+        await client.query('BEGIN');
 
-      // Provision Cognito user. If this fails, roll back the company row so
-      // we don't leave an orphan tenant.
-      try {
-        await cognitoClient.send(new AdminCreateUserCommand({
-          UserPoolId: USER_POOL_ID,
-          Username: ownerEmail,
-          UserAttributes: [
-            { Name: 'email', Value: ownerEmail },
-            { Name: 'email_verified', Value: 'true' },
-            ...(ownerName ? [{ Name: 'name', Value: ownerName }] : []),
-          ],
-          DesiredDeliveryMediums: ['EMAIL'], // Cognito sends invite + temp password
-        }));
-        // Owners group implies the granular role; CompanyUsers is the umbrella
-        // that gates routes via /me/* — same pattern as /team/users/invite.
-        await cognitoClient.send(new AdminAddUserToGroupCommand({
-          UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'CompanyUsers'
-        }));
-        await cognitoClient.send(new AdminAddUserToGroupCommand({
-          UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'Owners'
-        }));
-      } catch (e) {
-        console.error('[approve] Cognito provisioning failed, rolling back company:', e.message);
-        try { await pool.query('DELETE FROM companies WHERE id = $1', [newCompanyId]); } catch {}
-        // UsernameExistsException is the common "already provisioned" case —
-        // surface it distinctly so the admin can decide to reuse vs. abort.
-        if (e.name === 'UsernameExistsException') {
-          return respond(409, { error: 'cognito_user_exists', email: ownerEmail });
+        // Serialize concurrent approvals of the same demo_request. hashtext
+        // gives a stable 32-bit hash; pg_advisory_xact_lock auto-releases at
+        // transaction end. Two simultaneous Approve clicks: the second waits
+        // here until the first's transaction completes, then re-reads the row
+        // (now status='approved') and takes the idempotent path below.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('demo_approve:' || $1::text))", [drId]);
+
+        // Pull the demo request inside the lock. We see the latest state
+        // (in particular, whether a concurrent transaction already approved it).
+        const drRes = await client.query('SELECT * FROM demo_requests WHERE id = $1', [drId]);
+        if (!drRes.rows.length) {
+          await client.query('ROLLBACK');
+          return respond(404, { error: 'demo_request_not_found' });
         }
-        return respond(500, { error: 'cognito_provisioning_failed', detail: e.message });
-      }
+        const dr = drRes.rows[0];
 
-      // Insert company_users row linking the Cognito user to the company.
-      // We don't have the cognito sub yet (AdminCreateUser doesn't return it
-      // in the same shape), so we look it up. Non-fatal — the role group
-      // alone gates auth.
-      try {
-        await pool.query(
-          `INSERT INTO company_users (company_id, email, role, status, created_at)
-           VALUES ($1, $2, 'owner', 'active', NOW())
-           ON CONFLICT DO NOTHING`,
-          [newCompanyId, ownerEmail]
+        // Idempotent path: already approved with a real company. Return success
+        // with the existing tenant info so a retried Approve click doesn't error.
+        if (dr.status === 'approved' && dr.approved_company_id) {
+          const existing = await client.query(
+            'SELECT id, name::text, slug::text, contact_email::text FROM companies WHERE id = $1',
+            [dr.approved_company_id]
+          );
+          await client.query('COMMIT');
+          if (existing.rows.length) {
+            return respond(200, {
+              success: true,
+              company_id: existing.rows[0].id,
+              company_name: existing.rows[0].name,
+              slug: existing.rows[0].slug,
+              owner_email: existing.rows[0].contact_email,
+              trial_ends_at_days: 14,
+              idempotent: true,
+            });
+          }
+          // Edge case: demo_request claims approved but the company is gone
+          // (manual cleanup by an admin?). Surface distinctly rather than
+          // silently re-provisioning under the same demo_request_id.
+          return respond(409, { error: 'already_approved_but_company_missing', approved_company_id: dr.approved_company_id });
+        }
+        if (dr.status === 'converted') {
+          await client.query('ROLLBACK');
+          return respond(409, { error: 'already_converted', approved_company_id: dr.approved_company_id });
+        }
+
+        // Compute company info. body.company_name and body.owner_email overrides
+        // come from the ApproveModal in src/pages/admin/AdminDemoRequests.jsx.
+        const companyName = String(body.company_name || dr.company || dr.name).slice(0, 200).trim();
+        if (!companyName) {
+          await client.query('ROLLBACK');
+          return respond(400, { error: 'company_name_required' });
+        }
+        // AL-1: 8-char random suffix (~2.8 trillion combos) instead of the
+        // previous 4 chars. Collision risk is now negligible at any plausible
+        // tenant count. companies.slug presumably has a UNIQUE constraint;
+        // a collision still throws and rolls back the transaction cleanly.
+        const slugBase = companyName.toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'company';
+        const slug = `${slugBase}-${Math.random().toString(36).slice(2, 10)}`;
+
+        const ownerEmail = String(body.owner_email || dr.email).toLowerCase().trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+          await client.query('ROLLBACK');
+          return respond(400, { error: 'invalid_owner_email' });
+        }
+        const ownerName = String(body.owner_name || dr.name).slice(0, 200).trim();
+
+        // Step 1: INSERT companies (in transaction)
+        let newCompanyId;
+        try {
+          const cRes = await client.query(
+            `INSERT INTO companies (name, slug, status, contact_email, contact_phone, trial_ends_at, plan_type, subscription_status)
+             VALUES ($1, $2, 'trialing', $3, $4, NOW() + INTERVAL '14 days', 'standard', 'trialing')
+             RETURNING id`,
+            [companyName, slug, ownerEmail, dr.phone || null]
+          );
+          newCompanyId = cRes.rows[0].id;
+        } catch (e) {
+          console.error('[approve] companies INSERT failed:', e.message);
+          await client.query('ROLLBACK');
+          return respond(500, { error: 'company_create_failed', detail: e.message });
+        }
+
+        // Steps 2-4: Cognito provisioning. Cognito is external, so we can't put
+        // it in the DB transaction. We track which Cognito side-effects landed
+        // and explicitly undo them via AdminDeleteUser if a later step fails.
+        cognitoOwnerEmailForRollback = ownerEmail;
+        try {
+          await cognitoClient.send(new AdminCreateUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: ownerEmail,
+            UserAttributes: [
+              { Name: 'email', Value: ownerEmail },
+              { Name: 'email_verified', Value: 'true' },
+              ...(ownerName ? [{ Name: 'name', Value: ownerName }] : []),
+            ],
+            DesiredDeliveryMediums: ['EMAIL'], // Cognito sends invite + temp password
+          }));
+          cognitoUserCreated = true;
+          // Owners group implies the granular role; CompanyUsers is the umbrella
+          // that gates routes via /me/* — same pattern as /team/users/invite.
+          // If either AddUserToGroup throws, the catch block AdminDeleteUsers the
+          // partially-created user and rolls back the DB transaction.
+          await cognitoClient.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'CompanyUsers'
+          }));
+          await cognitoClient.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID, Username: ownerEmail, GroupName: 'Owners'
+          }));
+        } catch (e) {
+          console.error('[approve] Cognito provisioning failed:', e.message);
+          // Roll back DB and Cognito. The outer catch handles both via the
+          // tracked flags + ROLLBACK statement.
+          await client.query('ROLLBACK');
+          if (cognitoUserCreated) {
+            try {
+              await cognitoClient.send(new AdminDeleteUserCommand({
+                UserPoolId: USER_POOL_ID, Username: ownerEmail
+              }));
+              cognitoUserCreated = false;
+            } catch (delErr) {
+              console.error('[approve] AdminDeleteUser cleanup failed (manual cleanup may be needed):', delErr.message);
+            }
+          }
+          if (e.name === 'UsernameExistsException') {
+            return respond(409, { error: 'cognito_user_exists', email: ownerEmail });
+          }
+          return respond(500, { error: 'cognito_provisioning_failed', detail: e.message });
+        }
+
+        // Step 5: INSERT company_users (in transaction). Was non-fatal in the
+        // previous version; making it fatal because without this row the new
+        // owner can sign in to Cognito but getAuthContext returns 401 ("user
+        // not provisioned"). Better to fail loud and let the admin retry.
+        try {
+          await client.query(
+            `INSERT INTO company_users (company_id, email, role, status, created_at)
+             VALUES ($1, $2, 'owner', 'active', NOW())`,
+            [newCompanyId, ownerEmail]
+          );
+        } catch (e) {
+          console.error('[approve] company_users INSERT failed:', e.message);
+          // ROLLBACK first (drops the companies row); then DeleteUser to undo
+          // Cognito side. Same shape as the Cognito-failure path above.
+          await client.query('ROLLBACK');
+          try {
+            await cognitoClient.send(new AdminDeleteUserCommand({
+              UserPoolId: USER_POOL_ID, Username: ownerEmail
+            }));
+            cognitoUserCreated = false;
+          } catch (delErr) {
+            console.error('[approve] AdminDeleteUser cleanup failed (manual cleanup may be needed):', delErr.message);
+          }
+          return respond(500, { error: 'company_users_insert_failed', detail: e.message });
+        }
+
+        // Step 6: UPDATE demo_requests (in transaction)
+        await client.query(
+          `UPDATE demo_requests
+              SET status = 'approved', approved_at = NOW(),
+                  approved_company_id = $1, updated_at = NOW()
+            WHERE id = $2`,
+          [newCompanyId, drId]
         );
-      } catch (e) { console.error('[approve] company_users insert non-fatal:', e.message); }
 
-      // Stamp the demo request as approved.
-      await pool.query(
-        `UPDATE demo_requests
-            SET status = 'approved', approved_at = NOW(),
-                approved_company_id = $1, updated_at = NOW()
-          WHERE id = $2`,
-        [newCompanyId, drId]
-      );
+        // AM-2 audit (in transaction). Inlined here rather than via the
+        // logActivity helper because we want this on the same client/transaction
+        // as the rest of the writes, not a fire-and-forget on the pool.
+        await client.query(
+          `INSERT INTO activity_log (company_id, user_email, action, resource_type, resource_id, metadata)
+           VALUES ($1, $2, 'tenant_provisioned', 'company', $3, $4)`,
+          [
+            newCompanyId,
+            adminEmail,
+            newCompanyId,
+            JSON.stringify({
+              demo_request_id: drId,
+              owner_email: ownerEmail,
+              owner_name: ownerName || null,
+              slug,
+              source: dr.source || null,
+              trial_days: 14,
+            }),
+          ]
+        );
 
-      // Send a custom welcome email with the sign-in link. (Cognito already
-      // sent its own invite with the temp password; this one frames it.)
-      try {
-        const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
-        const ses = new SESClient({ region: 'us-east-1' });
-        const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-        const html = `
-          <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f9fafb">
-            <h2 style="color:#7c3aed;margin:0 0 8px">Welcome to Smarterlift</h2>
-            <p style="color:#374151;line-height:1.6;margin:0 0 14px">Hi ${esc(ownerName || 'there')},</p>
-            <p style="color:#374151;line-height:1.6;margin:0 0 14px">
-              Your Smarterlift account for <strong>${esc(companyName)}</strong> is ready. You're on a 14-day trial — full access, no credit card required.
-            </p>
-            <p style="color:#374151;line-height:1.6;margin:0 0 18px">
-              You'll receive a separate email from <strong>Amazon Cognito</strong> with a temporary password. Use it to sign in at the link below; you'll be prompted to set a permanent password on your first sign-in.
-            </p>
-            <p style="text-align:center;margin:24px 0">
-              <a href="https://smarterlift.app/login"
-                 style="display:inline-block;padding:12px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Sign in to Smarterlift</a>
-            </p>
-            <p style="color:#6b7280;font-size:13px;line-height:1.6;margin:0">
-              Questions? Just reply to this email — it goes straight to Jeremy at The Golden Signature.
-            </p>
-            <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
-            <p style="color:#9ca3af;font-size:11px;margin:0">Smarterlift · The Golden Signature LLC · Dallas, TX</p>
-          </div>
-        `;
-        const text = `Welcome to Smarterlift\n\nHi ${ownerName || 'there'},\n\nYour Smarterlift account for ${companyName} is ready. You're on a 14-day trial — full access, no credit card required.\n\nYou'll receive a separate email from Amazon Cognito with a temporary password. Use it to sign in at https://smarterlift.app/login — you'll be prompted to set a permanent password on first sign-in.\n\nQuestions? Reply to this email.\n\n— Jeremy at The Golden Signature`;
-        await ses.send(new SendEmailCommand({
-          Source: 'nyceguy252@gmail.com',
-          Destination: { ToAddresses: [ownerEmail] },
-          ReplyToAddresses: ['nyceguy@thegoldensignature.com'],
-          Message: {
-            Subject: { Data: `Welcome to Smarterlift — your trial is ready` },
-            Body: { Html: { Data: html }, Text: { Data: text } },
-          },
-        }));
-      } catch (mailErr) {
-        console.error('[approve] welcome email failed (provisioning succeeded regardless):', mailErr.message);
-      }
+        // Commit. After this point, all four DB writes are durable.
+        await client.query('COMMIT');
+        // Mark Cognito state as "owned by a committed tenant" so the outer
+        // catch knows not to roll it back if a later non-fatal step throws.
+        cognitoUserCreated = false;
 
-      // AM-2: audit trail for the highest-stakes admin mutation. If a SuperAdmin
-      // credential is ever stolen, this row is the difference between knowing
-      // exactly which tenants were created and a forensic black hole. The row
-      // attaches to the new tenant (newCompanyId) so the audit also surfaces
-      // when listing the tenant's history.
-      await logActivity(
-        pool, newCompanyId, decodeJWT(event)?.email || null,
-        'tenant_provisioned', 'company', newCompanyId,
-        {
-          demo_request_id: drId,
-          owner_email: ownerEmail,
-          owner_name: ownerName || null,
+        // Step 7: SES welcome email (post-commit, non-fatal). A failure here
+        // doesn't roll back the tenant — the user can still sign in via the
+        // Cognito-sent invite email which has the temp password.
+        try {
+          const { SESClient, SendEmailCommand } = await import('@aws-sdk/client-ses');
+          const ses = new SESClient({ region: 'us-east-1' });
+          const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+          const html = `
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f9fafb">
+              <h2 style="color:#7c3aed;margin:0 0 8px">Welcome to Smarterlift</h2>
+              <p style="color:#374151;line-height:1.6;margin:0 0 14px">Hi ${esc(ownerName || 'there')},</p>
+              <p style="color:#374151;line-height:1.6;margin:0 0 14px">
+                Your Smarterlift account for <strong>${esc(companyName)}</strong> is ready. You're on a 14-day trial — full access, no credit card required.
+              </p>
+              <p style="color:#374151;line-height:1.6;margin:0 0 18px">
+                You'll receive a separate email from <strong>Amazon Cognito</strong> with a temporary password. Use it to sign in at the link below; you'll be prompted to set a permanent password on your first sign-in.
+              </p>
+              <p style="text-align:center;margin:24px 0">
+                <a href="https://smarterlift.app/login"
+                   style="display:inline-block;padding:12px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Sign in to Smarterlift</a>
+              </p>
+              <p style="color:#6b7280;font-size:13px;line-height:1.6;margin:0">
+                Questions? Just reply to this email — it goes straight to Jeremy at The Golden Signature.
+              </p>
+              <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0"/>
+              <p style="color:#9ca3af;font-size:11px;margin:0">Smarterlift · The Golden Signature LLC · Dallas, TX</p>
+            </div>
+          `;
+          const text = `Welcome to Smarterlift\n\nHi ${ownerName || 'there'},\n\nYour Smarterlift account for ${companyName} is ready. You're on a 14-day trial — full access, no credit card required.\n\nYou'll receive a separate email from Amazon Cognito with a temporary password. Use it to sign in at https://smarterlift.app/login — you'll be prompted to set a permanent password on first sign-in.\n\nQuestions? Reply to this email.\n\n— Jeremy at The Golden Signature`;
+          await ses.send(new SendEmailCommand({
+            Source: 'nyceguy252@gmail.com',
+            Destination: { ToAddresses: [ownerEmail] },
+            ReplyToAddresses: ['nyceguy@thegoldensignature.com'],
+            Message: {
+              Subject: { Data: `Welcome to Smarterlift — your trial is ready` },
+              Body: { Html: { Data: html }, Text: { Data: text } },
+            },
+          }));
+        } catch (mailErr) {
+          console.error('[approve] welcome email failed (provisioning succeeded regardless):', mailErr.message);
+        }
+
+        return respond(200, {
+          success: true,
+          company_id: newCompanyId,
+          company_name: companyName,
           slug,
-          source: dr.source || null,
-          trial_days: 14,
+          owner_email: ownerEmail,
+          trial_ends_at_days: 14,
+        });
+      } catch (e) {
+        // Catch-all safety net. Anything we didn't already handle (e.g. a
+        // pg connection error, an unhandled JSON parse, etc.) lands here.
+        // Roll back DB and any Cognito side-effect we've tracked.
+        try { await client.query('ROLLBACK'); } catch {}
+        if (cognitoUserCreated && cognitoOwnerEmailForRollback) {
+          try {
+            await cognitoClient.send(new AdminDeleteUserCommand({
+              UserPoolId: USER_POOL_ID, Username: cognitoOwnerEmailForRollback
+            }));
+          } catch (delErr) {
+            console.error('[approve] AdminDeleteUser cleanup in catch-all failed:', delErr.message);
+          }
         }
-      );
-
-      return respond(200, {
-        success: true,
-        company_id: newCompanyId,
-        company_name: companyName,
-        slug,
-        owner_email: ownerEmail,
-        trial_ends_at_days: 14,
-      });
+        console.error('[approve] unhandled error:', e?.stack || e?.message || e);
+        return internalError(event, e);
+      } finally {
+        client.release();
+      }
     }
 
     // ==================== END ADMIN CONSOLE ====================
