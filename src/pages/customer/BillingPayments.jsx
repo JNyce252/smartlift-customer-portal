@@ -119,9 +119,20 @@ const BillingPayments = () => {
               const sc = statusConfig[invoice.status] || statusConfig.pending;
               const StatusIcon = sc.icon;
               const isExpanded = expandedId === invoice.id;
-              const lineItems = typeof invoice.line_items === 'string'
-                ? JSON.parse(invoice.line_items || '[]')
-                : (invoice.line_items || []);
+              // CM-4: defensive parse. The pre-fix inline JSON.parse would throw
+              // on a malformed line_items column (e.g., legacy data, partial
+              // write), causing the whole billing page to render a blank screen.
+              // Try/catch falls back to empty list — invoice still renders, line
+              // items show as missing rather than the page crashing.
+              let lineItems = [];
+              try {
+                lineItems = Array.isArray(invoice.line_items)
+                  ? invoice.line_items
+                  : (invoice.line_items ? JSON.parse(invoice.line_items) : []);
+              } catch (e) {
+                console.warn('[BillingPayments] failed to parse line_items for invoice', invoice.id, e.message);
+                lineItems = [];
+              }
 
               return (
                 <div key={invoice.id} className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
@@ -206,18 +217,18 @@ const BillingPayments = () => {
                         <p className="text-gray-400 text-sm bg-gray-700/30 rounded-lg p-3 mb-4">{invoice.notes}</p>
                       )}
 
-                      {/* Pay Now CTA — emails the service provider for a payment link.
-                          Stripe integration is the planned upgrade (see CUSTOMER_PORTAL_REVIEW.md CM-1).
-                          Hidden entirely if profile.email is unavailable so we never show a broken link. */}
-                      {invoice.status !== 'paid' && profile.email && (
-                        <div className="bg-blue-900/10 border border-blue-700/30 rounded-xl p-4 text-center">
-                          <CreditCard className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-                          <p className="text-white font-semibold mb-1">Ready to pay online?</p>
-                          <p className="text-gray-400 text-sm mb-3">Contact your service provider for a secure payment link</p>
-                          <a href={`mailto:${profile.email}?subject=Payment for Invoice ${invoice.invoice_number}`}
-                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
-                            <DollarSign className="w-4 h-4" />Request Payment Link
-                          </a>
+                      {/* CM-1: removed the "Ready to pay online?" mailto stub
+                          which was false advertising — clicking it just opened
+                          the user's email composer. Replaced with an
+                          informational chip that points the customer at the
+                          service provider's contact channels (already shown on
+                          the page header). When Stripe is wired up, this
+                          becomes the real Pay Now widget. */}
+                      {invoice.status !== 'paid' && (
+                        <div className="bg-gray-700/30 border border-gray-600 rounded-xl p-4 text-center">
+                          <CreditCard className="w-7 h-7 text-gray-400 mx-auto mb-2" />
+                          <p className="text-gray-300 text-sm font-medium mb-1">Online payments coming soon</p>
+                          <p className="text-gray-500 text-xs">For now, please contact your service provider directly to settle this invoice.</p>
                         </div>
                       )}
 

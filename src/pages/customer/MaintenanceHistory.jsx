@@ -151,16 +151,32 @@ const MaintenanceHistory = () => {
                         <p className="text-gray-300 text-sm leading-relaxed bg-gray-900/50 rounded-lg p-3">{record.work_performed}</p>
                       </div>
                     )}
-                    {record.parts_replaced && record.parts_replaced.length > 0 && (
-                      <div>
-                        <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">Parts Replaced</p>
-                        <div className="flex flex-wrap gap-2">
-                          {(Array.isArray(record.parts_replaced) ? record.parts_replaced : JSON.parse(record.parts_replaced || '[]')).map((part, i) => (
-                            <span key={i} className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs">{part}</span>
-                          ))}
+                    {(() => {
+                      // CM-4: defensive parse. Pre-fix the inline JSON.parse
+                      // would throw on a malformed parts_replaced column,
+                      // crashing the maintenance history page for every
+                      // customer. Falls back to empty array if parse fails.
+                      let parts = [];
+                      try {
+                        parts = Array.isArray(record.parts_replaced)
+                          ? record.parts_replaced
+                          : (record.parts_replaced ? JSON.parse(record.parts_replaced) : []);
+                      } catch (e) {
+                        console.warn('[MaintenanceHistory] failed to parse parts_replaced for record', record.id, e.message);
+                        parts = [];
+                      }
+                      if (!parts.length) return null;
+                      return (
+                        <div>
+                          <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">Parts Replaced</p>
+                          <div className="flex flex-wrap gap-2">
+                            {parts.map((part, i) => (
+                              <span key={i} className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs">{part}</span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     {record.next_service_date && (
                       <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-3">
                         <p className="text-blue-400 text-sm flex items-center gap-2">

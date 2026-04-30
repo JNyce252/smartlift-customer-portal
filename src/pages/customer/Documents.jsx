@@ -171,12 +171,25 @@ const Documents = () => {
                         <span>{new Date(doc.created_at || doc.upload_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                       </div>
                     </div>
-                    {doc.file_url && (
-                      <a href={doc.file_url} target="_blank" rel="noreferrer"
+                    {/* CM-3: scheme validation, same shape as AH-1. file_url is
+                        written by internal users via the document upload flow.
+                        If a document ever lands with a `javascript:` or `data:`
+                        scheme (legacy data, future regression, compromised
+                        internal user), we'd execute it in the customer's
+                        browser when they click. Allow only http/https; render
+                        an inert chip otherwise. Also added rel="noopener" to
+                        prevent tab-nabbing on external destinations. */}
+                    {doc.file_url && /^https?:\/\/[^\s<>"]+$/i.test(doc.file_url) ? (
+                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
                         className="p-2 bg-blue-900/30 hover:bg-blue-900/50 text-blue-400 border border-blue-700/30 rounded-lg transition-colors flex-shrink-0">
                         <Eye className="w-4 h-4" />
                       </a>
-                    )}
+                    ) : doc.file_url ? (
+                      <span className="p-2 bg-amber-900/20 text-amber-400 border border-amber-700/30 rounded-lg flex-shrink-0 text-xs"
+                            title={`Unsafe URL blocked: ${doc.file_url}`}>
+                        ⚠
+                      </span>
+                    ) : null}
                   </div>
                   {doc.notes && (
                     <p className="text-gray-500 text-xs mt-2 ml-14">{doc.notes}</p>

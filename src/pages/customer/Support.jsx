@@ -48,7 +48,10 @@ const Support = () => {
 
   useEffect(() => {
     fetch(BASE_URL + '/profile', { headers: authHeaders() }).then(r => r.json()).then(d => setProfile(d || {})).catch(() => {});
-    fetch(BASE_URL + '/tickets', { headers: authHeaders() }).then(r => r.json()).then(d => setTickets(Array.isArray(d) ? d.slice(0, 5) : [])).catch(() => {});
+    // CM-7: server-side ?limit=5 instead of pulling everything and slicing client-side.
+    // Pre-fix this dragged the full ticket list (up to 100 rows) over the wire
+    // for every Support page load even though we only render 5.
+    fetch(BASE_URL + '/tickets?limit=5', { headers: authHeaders() }).then(r => r.json()).then(d => setTickets(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   const submitRequest = async () => {

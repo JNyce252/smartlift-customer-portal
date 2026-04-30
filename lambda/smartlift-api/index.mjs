@@ -2295,6 +2295,9 @@ Return this JSON only:
     if (method === 'GET' && path === '/tickets') {
       // M-8a: Customer-role callers see only their own tickets.
       // CH-3: Customer-role callers also get a curated column list (no resolution_notes, no internal IDs).
+      // CM-7: optional ?limit= query param. Pre-fix Support.jsx pulled the full
+      // list and sliced to 5 client-side, dragging up to 100 rows over the wire
+      // for every Support page load. ?limit= caps server-side.
       const params = [companyId];
       let where = 'WHERE st.company_id = $1';
       if (authRole === 'customer') {
@@ -2302,13 +2305,18 @@ Return this JSON only:
         params.push(customerId);
       }
       const ticketCols = authRole === 'customer' ? CUSTOMER_COLUMNS.service_tickets : 'st.*';
+      // Parse and bound the limit. Default 100 (prior behavior). Hard ceiling
+      // 500 to stop a curious caller asking for 10000 rows.
+      const limit = Math.min(Math.max(parseInt(event.queryStringParameters?.limit, 10) || 100, 1), 500);
+      params.push(limit);
       const result = await pool.query(
         `SELECT ${ticketCols}, c.company_name as customer_name, e.elevator_identifier
          FROM service_tickets st
          LEFT JOIN customers c ON c.id = st.customer_id
          LEFT JOIN elevators e ON e.id = st.elevator_id
          ${where}
-         ORDER BY CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, st.created_at DESC`,
+         ORDER BY CASE st.priority WHEN 'emergency' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, st.created_at DESC
+         LIMIT $${params.length}`,
         params
       );
       return respond(200, result.rows);
