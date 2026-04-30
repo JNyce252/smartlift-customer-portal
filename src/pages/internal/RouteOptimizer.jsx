@@ -5,7 +5,10 @@ import { Building2, MapPin, Navigation, Plus, X, Clock, Map, ChevronUp, ChevronD
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 
-const MAPS_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY || 'AIzaSyDmTnd7Q4K9YZ_uwF7bKKU42_kDHrlwG5E';
+// M-8 cleanup: drop the hardcoded fallback so a missing env var fails loudly at
+// build time rather than silently shipping a stale key. LeadSearch.jsx already
+// uses this pattern.
+const MAPS_KEY = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
 const DEFAULT_START = { lat: 32.7767, lng: -96.7970, name: 'Dallas, TX' };
 
 const RouteOptimizer = () => {
